@@ -59,7 +59,7 @@ class Config:
             
             # [关键修改] DQN 也必须叫 decay_start/steps，否则 utils 报错
             self.decay_start = 50     # 对应原来的 episode_decay
-            self.decay_steps = 100    # 对应原来的 epsilon_decay
+            self.decay_steps = 50    # 对应原来的 epsilon_decay
 
         # ==========================================
         # Group B: Reinforce
@@ -114,4 +114,5 @@ class Config:
             # =========================
             # Fuzzy 学习率与动作强度（工程上常设小一些更稳）
             # =========================
+            self.freeze_fuzzy_premise = True
             self.fuzzy_lr = 0.0002

@@ -25,15 +25,12 @@ class KFDQNAgent(DQNAgent):
         super().__init__(cfg)
 
         # --- 模糊系统初始化 ---
-        # kf_theta: 指导模糊系统 (用于动作选择 & 生成标签) - 对应论文中的 Mentor
-        self.fuzzy_guide = FuzzySystem(self.device).to(self.device)
-        # kf_theta_minus: 学习模糊系统 (通过 Replay Buffer 的数据进行交叉熵更新) - 对应论文中的 Student
-        self.fuzzy_learn = FuzzySystem(self.device).to(self.device)
+        self.fuzzy_guide = FuzzySystem(self.device).to(self.device)# kf_theta: 指导模糊系统
+        self.fuzzy_learn = FuzzySystem(self.device).to(self.device)# kf_theta_minus: 学习模糊系统 
         # 初始化时，让学习网络与指导网络参数同步
         self.fuzzy_learn.load_state_dict(self.fuzzy_guide.state_dict())
 
-        # 如果遵循通常的模糊系统解释，只更新规则权重（后件参数），
-        # 而冻结隶属度参数（中心/宽度，即前件参数）。
+        # 而冻结隶属度参数（中心/宽度，即前件参数）,只更新规则权重（后件参数），
         freeze_premise = getattr(cfg, "freeze_fuzzy_premise", True)
         if freeze_premise:
             # 冻结指导网络的前件参数
@@ -61,20 +58,16 @@ class KFDQNAgent(DQNAgent):
 
     def _hard_update_targets(self):
         """硬更新目标 Q 网络和模糊指导系统 (算法 2)。"""
-        # 更新 Target Q Network
-        self.target_q_net.load_state_dict(self.q_net.state_dict())
-        # 将"学习好的模糊参数"复制给"指导模糊系统"
-        self.fuzzy_guide.load_state_dict(self.fuzzy_learn.state_dict())
+        self.target_q_net.load_state_dict(self.q_net.state_dict())# 更新 Target Q Network
+        self.fuzzy_guide.load_state_dict(self.fuzzy_learn.state_dict())# 将"学习好的模糊参数"复制给"指导模糊系统"
 
     def update_parameters(self, episode_idx: int):
         """每回合调用一次：更新 epsilon，更新 m/n 权重，以及执行周期性硬更新。"""
         self._episode_idx = episode_idx
-
         # 更新 epsilon (论文中使用 HYAS 来避免早期的纯随机探索)
         self.epsilon = get_linear_decay_epsilon(episode_idx, self.cfg)
-
-        # 公式 (34): m = 0.35 + 0.6 * exp(-i)
-        # 如果希望衰减得慢一点，可以在 config 设置 m_tau，计算 exp(-i/m_tau)
+        # 
+        # 公式 (34): m = 0.35 + 0.6 * exp(-i),可以在 config 设置 m_tau，计算 exp(-i/m_tau)
         m_tau = getattr(self.cfg, "m_tau", None)
         if m_tau is None:
             expo = -float(episode_idx)
@@ -97,18 +90,15 @@ class KFDQNAgent(DQNAgent):
         if episode_idx is None:
             episode_idx = self._episode_idx
 
-        state_t = torch.tensor(np.array([state]), dtype=torch.float32, device=self.device)
-
+        state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
         # 获取 Q 值和模糊系统输出
-        q_values = self.q_net(state_t)
-        fuzzy_logits = self.fuzzy_guide(state_t)
-
+        q_values = self.q_net(state)
+        fuzzy_logits = self.fuzzy_guide(state)
         # 模糊系统的推荐动作
         a_f = int(fuzzy_logits.argmax(dim=1).item())
-
         # 算法 1 逻辑: 
         # 如果 p < epsilon (探索) -> 使用 a_f (知识引导探索)
-        # 或者 如果 episode < ept (早期阶段) -> 强制使用 a_f
+        # 或者 如果 episode < ept -> 强制使用 a_f
         # 否则 -> 使用混合动作
         if (np.random.rand() < self.epsilon) or (episode_idx < self.cfg.ep_r):
             return a_f
@@ -154,7 +144,7 @@ class KFDQNAgent(DQNAgent):
                 # 获取指导模糊系统对下一状态的推荐动作 a_f(s')
                 a_f_next = self.fuzzy_guide(next_states).argmax(dim=1).view(-1, 1)
 
-                # 重要细节: 论文此处通常使用 Online Q Network 来评估模糊动作的价值，
+                # 论文此处使用 Online Q Network 来评估模糊动作的价值，
                 # 而上面的 max 项使用的是 Target Q Network。
                 q_fuzzy_next = self.q_net(next_states).gather(1, a_f_next)
 

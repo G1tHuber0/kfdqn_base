@@ -5,12 +5,21 @@ import time
 import datetime
 import os
 import matplotlib.pyplot as plt
+import torch
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from config import Config
 from utils.replay_buffer import ReplayBuffer
 from agents.kfdqn_agent import KFDQNAgent
+
+def make_env(env_name="CartPole-v0"):
+    # 创建环境
+    env = gym.make(env_name)
+    # 使用 .unwrapped 访问底层物理属性
+    env.unwrapped.x_threshold = 2.4 
+    env.unwrapped.theta_threshold_radians = 41.8 * (np.pi / 180)  # 转为弧度
+    return env
 
 def train_kfdqn():
     # 1. 初始化配置 (自动加载 KFDQN 参数)
@@ -28,10 +37,10 @@ def train_kfdqn():
     writer = SummaryWriter(log_dir=log_dir)
 
     # 3. 环境与种子设置
-    env = gym.make(cfg.env_name)
+    env = make_env(cfg.env_name)
     np.random.seed(cfg.seed)
     random.seed(cfg.seed)
-    # torch seed 已在 agent 内部或全局设置中处理，这里主要处理 numpy/env
+    torch.manual_seed(cfg.seed)
 
     # 4. 初始化 Agent 和 Buffer
     agent = KFDQNAgent(cfg)
@@ -46,10 +55,8 @@ def train_kfdqn():
     # 使用 tqdm 显示进度条
     with tqdm(total=cfg.episodes, desc="Training", unit="ep", dynamic_ncols=True, colour='red') as pbar:
         for ep in range(cfg.episodes):
-            
             # [关键] 更新参数: Epsilon, 混合权重 m/n, 硬更新检查
             agent.update_parameters(ep)
-
             # 重置环境
             state, _ = env.reset(seed=cfg.seed + ep)
             done = False
@@ -74,7 +81,6 @@ def train_kfdqn():
                 # 经验回放训练
                 if buffer.size() > cfg.minimal_size:
                     b_s, b_a, b_r, b_ns, b_d = buffer.sample(cfg.batch_size)
-                    
                     # 构造字典传入 agent.update
                     transition_dict = {
                         "states": b_s,
@@ -83,10 +89,8 @@ def train_kfdqn():
                         "next_states": b_ns,
                         "dones": b_d,
                     }
-                    
                     # [关键] 传入 episode_idx 以便判断是 监督学习 还是 混合TD学习
                     losses = agent.update(transition_dict, episode_idx=ep)
-                    
                     ep_q_loss += losses["q_loss"]
                     ep_fuzzy_loss += losses["fuzzy_loss"]
                     updates += 1

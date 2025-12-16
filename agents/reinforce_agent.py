@@ -24,30 +24,46 @@ class ReinforceAgent:
         pass
 
     def update(self, transition_dict):
-        # REINFORCE 是回合更新，这里假设 transition_dict 包含了一个完整回合的数据
         reward_list = transition_dict['rewards']
         state_list = transition_dict['states']
         action_list = transition_dict['actions']
 
-        G = 0
         self.optimizer.zero_grad()
         
-        # 逆序计算回报 G_t
-        for i in reversed(range(len(reward_list))):
-            reward = reward_list[i]
-            state = torch.tensor(np.array([state_list[i]]), dtype=torch.float).to(self.device)
-            action = torch.tensor(np.array([action_list[i]]), dtype=torch.long).to(self.device)
-            
-            G = self.cfg.gamma * G + reward
-            
-            # 计算 log_prob
-            probs = self.policy_net(state)
-            action_dist = torch.distributions.Categorical(probs)
-            log_prob = action_dist.log_prob(action)
-            
-            # Loss = -log_prob * G
-            loss = -log_prob * G
-            loss.backward() # 累积梯度
-            
+        # --- 第一步：计算并收集所有的 G_t ---
+        G = 0
+        G_list = []
+        # 逆序计算，注意我们要把计算出来的 G 存起来
+        for r in reversed(reward_list):
+            G = self.cfg.gamma * G + r
+            G_list.insert(0, G) # 插入到最前面，恢复正序
+
+        # 转换为 Tensor
+        G_tensor = torch.tensor(G_list, dtype=torch.float).to(self.device)
+
+        # 回报处理
+        if len(G_tensor) > 1: # 防止单步回合导致方差为0
+            # G_tensor = (G_tensor - G_tensor.mean()) / (G_tensor.std() + 1e-9)
+            G_tensor = G_tensor - G_tensor.mean()
+        
+        # --- 第二步：批量计算 Loss ---
+        # 我们可以把 state_list 堆叠起来一次性计算，效率更高
+        
+        # 1. 转换数据
+        states = torch.tensor(np.array(state_list), dtype=torch.float).to(self.device)
+        actions = torch.tensor(np.array(action_list), dtype=torch.long).view(-1, 1).to(self.device)
+        
+        # 2. 前向传播 (一次性算出所有步骤的概率)
+        probs = self.policy_net(states)
+        action_dist = torch.distributions.Categorical(probs)
+        log_probs = action_dist.log_prob(actions.squeeze())
+        
+        # 3. 计算 Loss (Vectorized)
+        # loss = - sum( log_prob * Normalized_G )
+        loss = -torch.sum(log_probs * G_tensor)
+        
+        # 4. 反向传播
+        loss.backward()
         self.optimizer.step()
-        return loss.item() # 返回最后一步的 loss 仅作记录
+
+        return loss.item() / len(action_list)

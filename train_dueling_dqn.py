@@ -29,6 +29,9 @@ def train_dueling_dqn():
     print(f"{'='*60}\n")
     
     env = gym.make(cfg.env_name)
+    env.unwrapped.x_threshold = 2.4 
+    env.unwrapped.theta_threshold_radians = 41.8 * (np.pi / 180)  # 转为弧度
+
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
@@ -42,7 +45,7 @@ def train_dueling_dqn():
 
     last_log_time = time.time() 
     last_log_total_steps = 0    
-    current_sps = 0             
+    current_sps = 0 
 
     with tqdm(total=cfg.episodes, desc="Training", unit="ep", dynamic_ncols=True, colour='yellow') as pbar:      
         for i in range(cfg.episodes):

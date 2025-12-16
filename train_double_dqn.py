@@ -30,6 +30,8 @@ def train_double_dqn():
     print(f"{'='*60}\n")
     
     env = gym.make(cfg.env_name)
+    env.unwrapped.x_threshold = 2.4 
+    env.unwrapped.theta_threshold_radians = 41.8 * (np.pi / 180)  # 转为弧度
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)

@@ -1,118 +1,153 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import itertools
 
+class FuzzyConfig:
+    """
+    配置类：严格对齐论文参数 (Strict Paper Alignment)
+    适用环境: CartPole-v0 (需在 train.py 中设置 x_threshold=2.4)
+    """
+    # ==========================================
+    # 1. 输入变量定义 (Antecedents) - 论文 Fig.4
+    # ==========================================
+    # 状态顺序: [CartPos, CartVel, PoleAngle, PoleVel]
+    
+    ANTECEDENT_CENTERS = [
+        [-2.4, 2.4],    # cp: 对应环境 +-2.4 限制
+        [-3.0, 3.0],    # cv: 小车速度
+        [-1.75, 1.75],  # pd: 杆角度
+        [-1.0, 1.0]     # pv: 杆角速度
+    ]
+    
+    ANTECEDENT_SIGMAS = [
+        [1.5, 1.5],     # cp: 论文原参数
+        [1.775, 1.775], # cv
+        [0.75, 0.75],   # pd
+        [0.625, 0.625]  # pv
+    ]
+
+    # ==========================================
+    # 2. 输出动作定义 (Consequents) - 论文 Fig.5
+    # ==========================================
+    # 基于数据拟合: Big中心在 1.0, Small中心在 -1.0
+    # 物理含义: +1.0 代表"支持/推荐", -1.0 代表"反对/抑制"
+    
+    ACTION_SUPPORT = 1.0    # Big (Blue Curve)
+    ACTION_OPPOSE = -1.0    # Small (Red Curve)
+    
+    # 预处理参数
+    POS_LIMIT = 2.4         # 位置截断值
+
 class FuzzySystem(nn.Module):
+    """
+    KFDQN 模糊逻辑控制器
+    核心功能: 将环境状态映射为动作推荐分数 (Logits)
+    """
     def __init__(self, device):
         super(FuzzySystem, self).__init__()
         self.device = device
         
-        # ====================================================
-        # 1. 严格使用你提供的论文参数 (不可更改)
-        # ====================================================
-        # 状态顺序: [CartPos, CartVel, PoleAngle, PoleVel]
-        
-        # 你的参数:
-        mus_data = [
-            [-2.4, 2.4],    # Position (x)
-            [-3.0, 3.0],    # Velocity (x_dot)
-            [-1.75, 1.75],  # Angle (theta) - 论文值
-            [-1.0, 1.0]     # AngVel (theta_dot)
-        ]
-        
-        sigmas_data = [
-            [1.5, 1.5],       # Position
-            [1.775, 1.775],   # Velocity
-            [0.75, 0.75],     # Angle
-            [0.625, 0.625]    # AngVel
-        ]
+        # 1. 初始化模糊集参数
+        self._init_fuzzy_sets()
 
-        self.centers = nn.Parameter(torch.tensor(mus_data, dtype=torch.float32).to(device))
-        self.sigmas = nn.Parameter(torch.tensor(sigmas_data, dtype=torch.float32).to(device))
-
-        # ====================================================
-        # 2. 规则权重初始化 (Consequent Parameters)
-        # ====================================================
-        # 生成 16 条规则 (2^4)
+        # 2. 定义缩放系数 (Preprocess Scaling)
+        # 目的: 将 Gym 微小的弧度值放大，使其能落在模糊集(Center=1.75)的有效区间内
+        # 角度/角速度放大 10 倍，位置/速度保持 1.0
+        self.scales = torch.tensor([1.0, 1.0, 8.4, 10.0], device=device)
+        
+        # 3. 初始化规则库权重
         self.rule_weights = nn.Parameter(torch.zeros(16, 2).to(device))
-        
-        # 使用强化的物理逻辑初始化，以适配较宽的模糊集参数
-        self._initialize_physics_knowledge()
+        self._build_rule_base()
 
-    def _initialize_physics_knowledge(self):
+    def _init_fuzzy_sets(self):
+        self.centers = nn.Parameter(
+            torch.tensor(FuzzyConfig.ANTECEDENT_CENTERS, dtype=torch.float32).to(self.device),
+            requires_grad=False 
+        )
+        self.sigmas = nn.Parameter(
+            torch.tensor(FuzzyConfig.ANTECEDENT_SIGMAS, dtype=torch.float32).to(self.device),
+            requires_grad=False
+        )
+
+    def preprocess(self, state):
         """
-        初始化 16 条规则的权重。
-        由于 Angle 的中心(1.75)远大于失效角度(0.2)，
-        我们需要非常敏感的权重来捕捉微小的变化。
+        数据预处理流水线:
+        Raw State -> [Scaling] -> [Clamping] -> Fuzzy Input
         """
-        # 生成所有组合: 0=Left/Negative, 1=Right/Positive
+        # 1. 缩放 (主要针对 Angle 和 AngVel)
+        scaled_state = state * self.scales
+        
+        # 2. 截断 (适配环境 2.4 的限制)
+        # clone() 防止原地修改影响外部数据
+        processed = scaled_state.clone()
+        processed[:, 0] = torch.clamp(processed[:, 0], -FuzzyConfig.POS_LIMIT, FuzzyConfig.POS_LIMIT)
+        
+        # (可选) 对其他变量也做保护性截断，防止 extreme case
+        # processed[:, 2] = torch.clamp(processed[:, 2], -2.0, 2.0) # Angle
+        
+        return processed
+
+    def _build_rule_base(self):
+        """
+        构建语义规则库 (Table 3)
+        逻辑: 
+        - 杆倒向哪边，就支持哪边的动作 (Support Big)
+        - 反对另一边的动作 (Oppose Small)
+        """
         combinations = list(itertools.product([0, 1], repeat=4))
         
+        SUPPORT = FuzzyConfig.ACTION_SUPPORT # +1.0
+        OPPOSE = FuzzyConfig.ACTION_OPPOSE   # -1.0
+
         with torch.no_grad():
-            for i, (pos, vel, angle, ang_vel) in enumerate(combinations):
-                # 将 0/1 映射为物理符号: 0 -> -1 (Left), 1 -> +1 (Right)
-                s_pos = -1.0 if pos == 0 else 1.0
-                s_vel = -1.0 if vel == 0 else 1.0
-                s_ang = -1.0 if angle == 0 else 1.0
-                s_ang_vel = -1.0 if ang_vel == 0 else 1.0
+            for i, (cp, cv, pd, pv) in enumerate(combinations):
+                # pd (Angle): 0=Left, 1=Right
+                # pv (AngVel): 0=Left, 1=Right
                 
-                # --- PD 控制打分逻辑 ---
-                # 核心逻辑：Force ~ Kp * Angle + Kd * AngVel
-                # 因为模糊集很宽，我们需要加大 AngVel 的权重来预测趋势
+                # --- 核心控制逻辑 ---
                 
-                # 权重分配：
-                # AngVel (5.0): 预测趋势，防止倒塌的最关键因素
-                # Angle (4.0): 当前倾斜程度
-                # Pos (1.0): 稍微回中，但不能影响平衡
-                
-                # 计算“向右推”的必要性分值
-                # 注意：Pos 的符号是反的。如果车在右边(s_pos=1)，我们希望往左推(-1)来回中。
-                score = (4.0 * s_ang) + (5.0 * s_ang_vel) - (1.0 * s_pos) - (0.5 * s_vel)
-                
-                # --- 赋值权重 ---
-                # 使用较大的 Scale (5.0) 来使得 Softmax 后的输出接近 One-hot
-                # 这样即使隶属度差异很小，动作选择也会很果断
-                scale = 5.0 
-                
-                if score > 0:
-                    # 建议向右 (Action 1)
-                    self.rule_weights[i, 0] = -1.0 * scale # 抑制 Left
-                    self.rule_weights[i, 1] = 1.0 * scale  # 激活 Right
-                else:
-                    # 建议向左 (Action 0)
-                    self.rule_weights[i, 0] = 1.0 * scale  # 激活 Left
-                    self.rule_weights[i, 1] = -1.0 * scale # 抑制 Right
+                # Case A: 杆向左倾 (Angle Left)
+                if pd == 0:
+                    # 无论杆是正在向左倒(危急)还是向右回正(稳定)，
+                    # 为了保持平衡，主要策略都是"保持车在杆下面"，即去接杆(向左)。
+                    self.rule_weights[i, 0] = SUPPORT # 推荐 Action 0 (Left)
+                    self.rule_weights[i, 1] = OPPOSE  # 反对 Action 1 (Right)
+
+                # Case B: 杆向右倾 (Angle Right)
+                else: 
+                    # 同理，主要策略是向右推去接杆
+                    self.rule_weights[i, 0] = OPPOSE  # 反对 Action 0 (Left)
+                    self.rule_weights[i, 1] = SUPPORT # 推荐 Action 1 (Right)
 
     def gaussian(self, x, mu, sigma):
         return torch.exp(-0.5 * ((x - mu) / sigma) ** 2)
 
     def forward(self, state):
+        # 0. 维度与预处理
+        if state.dim() == 1: state = state.unsqueeze(0)
         batch_size = state.shape[0]
-        x = state.unsqueeze(2) 
         
-        # 1. 模糊化 (使用固定参数)
+        # [关键步骤] 缩放与截断
+        x_in = self.preprocess(state)
+        x = x_in.unsqueeze(2) # [B, 4, 1]
+
+        # 1. 模糊化 (Fuzzification)
         mu = self.gaussian(x, self.centers, self.sigmas)
+
+        # 2. 推理 (Inference)
+        m_cp, m_cv = mu[:, 0, :], mu[:, 1, :]
+        m_pd, m_pv = mu[:, 2, :], mu[:, 3, :]
         
-        # 2. 全排列规则推理 (16 Rules)
-        m0 = mu[:, 0, :] # Pos
-        m1 = mu[:, 1, :] # Vel
-        m2 = mu[:, 2, :] # Angle
-        m3 = mu[:, 3, :] # AngVel
-        
-        # 计算所有组合的激活强度
-        # [Batch, 4]
-        layer1 = torch.bmm(m0.unsqueeze(2), m1.unsqueeze(1)).view(batch_size, -1) 
-        layer2 = torch.bmm(m2.unsqueeze(2), m3.unsqueeze(1)).view(batch_size, -1)
-        
-        # [Batch, 16]
-        firing_strengths = torch.bmm(layer1.unsqueeze(2), layer2.unsqueeze(1)).view(batch_size, -1)
-        
-        # 3. 归一化
-        norm_strengths = firing_strengths / (torch.sum(firing_strengths, dim=1, keepdim=True) + 1e-6)
-        
-        # 4. 去模糊化
-        # [Batch, 16] x [16, 2] -> [Batch, 2]
-        output = torch.matmul(norm_strengths, self.rule_weights)
-        
+        layer1 = torch.bmm(m_cp.unsqueeze(2), m_cv.unsqueeze(1)).view(batch_size, -1)
+        layer2 = torch.bmm(m_pd.unsqueeze(2), m_pv.unsqueeze(1)).view(batch_size, -1)
+        # 计算 16 条规则的激活度
+        firing = torch.bmm(layer1.unsqueeze(2), layer2.unsqueeze(1)).view(batch_size, -1)
+
+        # 3. 归一化 (Normalization)
+        norm = firing / (torch.sum(firing, dim=1, keepdim=True) + 1e-6)
+
+        # 4. 解模糊 (Defuzzification)
+        # Output Range: approx [-1.0, 1.0]
+        output = torch.matmul(norm, self.rule_weights)
+
         return output
