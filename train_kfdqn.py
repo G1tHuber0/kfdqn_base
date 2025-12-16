@@ -7,7 +7,7 @@ import os
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-import torch
+
 from config import Config
 from utils.replay_buffer import ReplayBuffer
 from agents.kfdqn_agent import KFDQNAgent
@@ -19,7 +19,6 @@ def train_kfdqn():
     # 2. 准备 TensorBoard 和 日志路径
     print(f"\n{'='*60}")
     print(f"开始训练 KFDQN | 环境: {cfg.env_name} | 设备: {cfg.device}")
-    print(f"查看训练过程数据请在控制台运行: tensorboard --logdir=results")
     print(f"{'='*60}\n")
     # --- TensorBoard 配置 ---
     curr_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
@@ -38,23 +37,11 @@ def train_kfdqn():
     agent = KFDQNAgent(cfg)
     buffer = ReplayBuffer(cfg.buffer_size)
 
-    calib = agent.calibrate_fuzzy_scaler(env, steps=cfg.fuzzy_calib_steps, q=cfg.fuzzy_calib_q)
-    print("Fuzzy scaler calibration:", calib)
-    writer.add_scalar("Fuzzy/theta_scale", calib["theta_scale"], 0)
-    writer.add_scalar("Fuzzy/theta_dot_scale", calib["theta_dot_scale"], 0)
-
     # 5. 训练循环变量
     return_list = []
     total_steps = 0
     last_log_time = time.time()
     last_log_total_steps = 0
-    s, _ = env.reset()
-    print("raw theta/theta_dot:", s[2], s[3])
-    
-    s_t = torch.tensor(s[None, :], dtype=torch.float32, device=cfg.device)
-    sp_t = agent.fuzzy_guide.preprocess(s_t).cpu().numpy()[0]
-    print("fuzzy pd/pv:", sp_t[2], sp_t[3])
-
 
     # 使用 tqdm 显示进度条
     with tqdm(total=cfg.episodes, desc="Training", unit="ep", dynamic_ncols=True, colour='red') as pbar:
@@ -145,8 +132,8 @@ def train_kfdqn():
     plt.xlabel('Episodes')
     plt.ylabel('Return')
     plt.savefig(os.path.join(log_dir, 'kfdqn_result.png'))
-    print(f"训练结束，结果图已保存至: {log_dir}")
-    print(f"{'='*30}Done{'='*30}\n")
-    
+    print(f"\n训练结束，结果图已保存至: {log_dir}")
+    print("Done.")
+
 if __name__ == "__main__":
     train_kfdqn()

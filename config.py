@@ -93,8 +93,6 @@ class Config:
             self.buffer_size = 10000
             self.minimal_size = 500
             self.batch_size = 64
-            # KFDQN 的 target 同步在 Agent 内用 C_update（episode级）实现
-            # 为避免与 DQN 基类 step-based target_update 冲突，这里置 None（或不使用）
             self.target_update = None
             # 探索参数
             self.epsilon_start = 1.0
@@ -117,17 +115,3 @@ class Config:
             # Fuzzy 学习率与动作强度（工程上常设小一些更稳）
             # =========================
             self.fuzzy_lr = 0.0002
-            self.fuzzy_action_scale = 5.0
-            # =========================
-            # A-method scaler calibration / preprocessing
-            # =========================
-            self.fuzzy_calib_steps = 3000
-            self.fuzzy_calib_q = 0.99
-            # Fig.4 reference centers (用于分位数缩放对齐)
-            self.fuzzy_pd_ref = 1.75
-            self.fuzzy_pv_ref = 1.0
-            # clip ranges（与你当前复现一致）
-            self.fuzzy_cv_clip = 3.0
-            self.fuzzy_pd_clip = 2.25
-            self.fuzzy_pv_clip = 2.0
-            self.fuzzy_cp_clip = 2.4
