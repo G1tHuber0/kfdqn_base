@@ -29,7 +29,7 @@ def train_ac():
     
     env = gym.make(cfg.env_name)
     env.unwrapped.x_threshold = 2.4 
-    env.unwrapped.theta_threshold_radians = 41.8 * (np.pi / 180)  # 转为弧度
+    # env.unwrapped.theta_threshold_radians = 41.8 * (np.pi / 180)  # 转为弧度
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
@@ -139,8 +139,10 @@ def train_ac():
     plt.title('Actor-Critic (CartPole-v0)')
     plt.xlabel('Episodes')
     plt.ylabel('Return')
+    plt.xlim(0, 500)  # 设置 x 轴范围 (最小值, 最大值)
+    plt.ylim(0, 200)   # 设置 y 轴范围 (最小值, 最大值)
     plt.savefig(os.path.join(log_dir, 'ac_result.png'))
-    print(f"\n训练结束，结果已保存至 {log_dir}")
+    print(f"训练结束，结果已保存至 {log_dir}\n")
 
 if __name__ == '__main__':
     train_ac()

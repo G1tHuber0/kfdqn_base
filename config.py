@@ -30,7 +30,13 @@ class Config:
         # --- 3. 训练通用参数 ---
         self.gamma = 0.98       
         self.episodes = 500     
-        self.lr = 0.002         
+        self.lr = 0.002   
+
+        # 探索参数
+        self.epsilon_start = 1.0
+        self.epsilon_end = 0.01
+        self.decay_start = 50
+        self.decay_steps = 0      
         
         # --- 4. 初始化特定算法参数 ---
         # 先给 KFDQN 特有参数赋默认值 None，防止报错
@@ -53,13 +59,6 @@ class Config:
             self.batch_size = 64     
             self.target_update = 10
             
-            # --- 探索参数 (统一命名) ---
-            self.epsilon_start = 1.0  
-            self.epsilon_end = 0.01   
-            
-            # [关键修改] DQN 也必须叫 decay_start/steps，否则 utils 报错
-            self.decay_start = 50     # 对应原来的 episode_decay
-            self.decay_steps = 50    # 对应原来的 epsilon_decay
 
         # ==========================================
         # Group B: Reinforce
@@ -94,11 +93,7 @@ class Config:
             self.minimal_size = 500
             self.batch_size = 64
             self.target_update = None
-            # 探索参数
-            self.epsilon_start = 1.0
-            self.epsilon_end = 0.01
-            self.decay_start = 50
-            self.decay_steps = 50
+            
             # KFDQN 关键超参（按论文）
             self.h1 = 0.1
             self.h2 = 0.08
@@ -109,10 +104,10 @@ class Config:
             # Eq.(34): m = 0.35 + 0.6 * exp(-i)
             self.m_base = 0.35
             self.m_decay = 0.6
-            self.m_tau = 1  # 严格复现：不使用 /m_tau
+            self.m_tau = 250  # 严格复现：不使用 /m_tau
 
             # =========================
             # Fuzzy 学习率与动作强度（工程上常设小一些更稳）
             # =========================
             self.freeze_fuzzy_premise = True
-            self.fuzzy_lr = 0.0002
+            self.fuzzy_lr = 0.001
