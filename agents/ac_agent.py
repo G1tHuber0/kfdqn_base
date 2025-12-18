@@ -12,8 +12,8 @@ class ACAgent:
         self.actor = PolicyNet(cfg.state_dim, cfg.hidden_dim, cfg.action_dim).to(self.device)
         self.critic = ValueNet(cfg.state_dim, cfg.hidden_dim).to(self.device)
         
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=0.0001) # AC Actor 学习率通常低一些
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=0.001) # Critic 学习率
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=cfg.lr_actor) # AC Actor 学习率通常低一些
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=cfg.lr_critic) # Critic 学习率
         self.epsilon = 0.0
 
     def take_action(self, state):

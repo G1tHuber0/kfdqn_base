@@ -17,11 +17,11 @@ class DQNAgent:
         self.target_q_net.load_state_dict(self.q_net.state_dict())
         
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=cfg.lr)
-        self.steps = 0
+        self.update_steps = 0
         self.epsilon = cfg.epsilon_start
 
     def take_action(self, state):
-        if np.random.random() < self.epsilon:
+        if np.random.random() <= self.epsilon:
             return np.random.randint(self.action_dim)
         else:
             state = torch.tensor(np.array([state]), dtype=torch.float).to(self.device)
@@ -29,7 +29,7 @@ class DQNAgent:
 
     def update(self, transition_dict):
         states = torch.tensor(transition_dict['states'], dtype=torch.float).to(self.device)
-        actions = torch.tensor(transition_dict['actions']).view(-1, 1).to(self.device)
+        actions = torch.tensor(transition_dict['actions'], dtype=torch.long).view(-1, 1).to(self.device)
         rewards = torch.tensor(transition_dict['rewards'], dtype=torch.float).view(-1, 1).to(self.device)
         next_states = torch.tensor(transition_dict['next_states'], dtype=torch.float).to(self.device)
         dones = torch.tensor(transition_dict['dones'], dtype=torch.float).view(-1, 1).to(self.device)
@@ -44,16 +44,15 @@ class DQNAgent:
 
         # Loss 计算 (公式 9)
         loss = F.mse_loss(q_values, q_targets)
-
         # 梯度更新
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        # 更新目标网络
-        if self.steps % self.cfg.target_update == 0:
+        # 更新目标网络：先累计步数，再按周期同步，避免首次更新立即触发
+        self.update_steps += 1
+        if self.update_steps % self.cfg.target_update == 0:
             self.target_q_net.load_state_dict(self.q_net.state_dict())
-        self.steps += 1
         return loss.item()
 
         # 更新 epsilon 的方法

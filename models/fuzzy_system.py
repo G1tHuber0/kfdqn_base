@@ -87,75 +87,49 @@ class FuzzySystem(nn.Module):
 
     def _build_rule_base(self):
         """
-        构建基于人类直觉的模糊规则库 (16条生存法则)
-        输入状态: 
-            cp (Cart Pos): 0=偏左, 1=偏右
-            cv (Cart Vel): 0=向左, 1=向右
-            pd (Pole Ang): 0=向左, 1=向右
-            pv (Pole Vel): 0=往左倒, 1=往右倒
-        
-        输出动作:
-            Action 0: 全力推左 (Force Left)
-            Action 1: 全力推右 (Force Right)
+        论文对齐版（CartPole-v0）先验模糊规则：Table 3 语义知识 -> 扩展为 16 条规则。
+
+        变量二值约定（必须与你的隶属函数索引一致）：
+        cp: 0=left, 1=right
+        cv: 0=left, 1=right
+        pd: 0=left, 1=right   # pole angle
+        pv: 0=left, 1=right   # pole angular velocity
+
+        动作约定（与你训练代码一致）：
+        action 0 = move left
+        action 1 = move right
+
+        Table 3（用 pd/pv 来表达“摆的方向 + 倾倒趋势”）：
+        (pd=left,  pv=left ) -> move left
+        (pd=left,  pv=right) -> move right
+        (pd=right, pv=right) -> move right
+        (pd=right, pv=left ) -> move left
+
+        扩展到 16 条：对 (cp,cv) 作为 don't-care 复制上述结论。
         """
-        # 生成所有可能的状态组合 (2^4 = 16种)
-        # 顺序: CartPos, CartVel, PoleDeg, PoleVel
-        combinations = list(itertools.product([0, 1], repeat=4))
-        
-        SUPPORT = FuzzyConfig.ACTION_SUPPORT # 建议做 (+1.0)
-        OPPOSE = FuzzyConfig.ACTION_OPPOSE   # 强烈反对 (-1.0)
+
+        SUPPORT = FuzzyConfig.ACTION_SUPPORT  # 例如 +1.0
+        OPPOSE  = FuzzyConfig.ACTION_OPPOSE   # 例如 -1.0
+
+        # 若你的规则数不是 16，请先确认 2^4 是否为你的规则数
+        combinations = list(itertools.product([0, 1], repeat=4))  # (cp, cv, pd, pv)
+
+        # (pd, pv) -> action
+        # 0=left, 1=right
+        action_map = {
+            (0, 0): 0,  # left,  left  -> move left
+            (0, 1): 1,  # left,  right -> move right
+            (1, 1): 1,  # right, right -> move right
+            (1, 0): 0,  # right, left  -> move left
+        }
 
         with torch.no_grad():
             for i, (cp, cv, pd, pv) in enumerate(combinations):
-                
-                # 默认两个动作都反对，下面根据规则择优录取
-                weight_left = OPPOSE  # Action 0
-                weight_right = OPPOSE # Action 1
-                # ==========================================
-                # 阶段一：生存本能 (Pole Safety First)
-                # ==========================================
-                # [直觉 1] 杆子向左歪，且正在加速向左倒 -> 极度危险！
-                # 不管车在哪，必须向左追，去接住杆子。
-                if pd == 0 and pv == 0:
-                    weight_left = SUPPORT  # 必须推左
-                    weight_right = OPPOSE
+                a = action_map[(pd, pv)]  # 执行动作 0/1
 
-                # [直觉 2] 杆子向右歪，且正在加速向右倒 -> 极度危险！
-                # 必须向右追。
-                elif pd == 1 and pv == 1:
-                    weight_left = OPPOSE
-                    weight_right = SUPPORT # 必须推右
-
-                # ==========================================
-                # 阶段二：精细微调 (Stabilization & Wall Avoidance)
-                # ==========================================
-                # 走到这里，说明 pd != pv，杆子正在往回摆 (Self-correcting)。
-                # 这时候杆子暂时安全，我们把注意力转移到"车的位置"上。
-                
-                else: 
-                    # --- 情况 A: 杆子向左歪(0)，但正在往右甩(1) ---
-                    # 正常思路: 我们应该推右(Action 1)，帮杆子回正，顺便把车带回中间。
-                    if pd == 0 and pv == 1:
-                        # 但是！如果车已经在最右边(1)而且还在向右跑(1) -> 撞墙警报！
-                        if cp == 1 and cv == 1:
-                            weight_left = SUPPORT  # [反直觉] 必须推左刹车，保住车
-                        else:
-                            weight_right = SUPPORT # 正常情况：推右，帮杆子立起来
-
-                    # --- 情况 B: 杆子向右歪(1)，但正在往左甩(0) ---
-                    # 正常思路: 我们应该推左(Action 0)，帮杆子回正。
-                    elif pd == 1 and pv == 0:
-                        # 但是！如果车已经在最左边(0)而且还在向左跑(0) -> 撞墙警报！
-                        if cp == 0 and cv == 0:
-                            weight_right = SUPPORT # [反直觉] 必须推右刹车，保住车
-                        else:
-                            weight_left = SUPPORT  # 正常情况：推左，帮杆子立起来
-
-                # ==========================================
-                # 写入权重表
-                # ==========================================
-                self.rule_weights[i, 0] = weight_left
-                self.rule_weights[i, 1] = weight_right
+                # 规则后件：推荐动作给 SUPPORT，另一动作给 OPPOSE
+                self.rule_weights[i, 0] = SUPPORT if a == 0 else OPPOSE
+                self.rule_weights[i, 1] = SUPPORT if a == 1 else OPPOSE
     def gaussian(self, x, mu, sigma):
         return torch.exp(-0.5 * ((x - mu) / sigma) ** 2)
 

@@ -11,15 +11,32 @@ from tqdm import tqdm
 from config import Config
 from utils.replay_buffer import ReplayBuffer
 from agents.dqn_agent import DQNAgent
+from utils.run_artifacts import save_run_config
+import warnings
+
+# 屏蔽 CartPole-v0 的弃用警告
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*CartPole-v0.*")
 
 def train_dqn():
     cfg = Config(algo='DQN')
-    
     # --- TensorBoard 配置 ---
     curr_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     log_dir = os.path.join("results/DQN", f"DQN_{curr_time}")
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
+    x_threshold = 2.4
+    theta_threshold_deg = 3.2
+    save_run_config(
+        log_dir,
+        cfg,
+        extra={
+            "env_overrides": {
+                "x_threshold": x_threshold,
+                "theta_threshold_deg": theta_threshold_deg,
+                "theta_threshold_radians": theta_threshold_deg * (np.pi / 180),
+            }
+        },
+    )
     writer = SummaryWriter(log_dir=log_dir)
     
     print(f"\n{'='*60}")
@@ -27,17 +44,24 @@ def train_dqn():
     print(f"TensorBoard: {log_dir}")
     print(f"{'='*60}\n")
     
+    base_seed = cfg.seed
     env = gym.make(cfg.env_name)
-    env.unwrapped.x_threshold = 2.4 
-#    env.unwrapped.theta_threshold_radians = 41.8 * (np.pi / 180)  # 转为弧度
-
-    random.seed(cfg.seed)
-    np.random.seed(cfg.seed)
-    torch.manual_seed(cfg.seed)
+    env.unwrapped.x_threshold = x_threshold
+    env.unwrapped.theta_threshold_radians = theta_threshold_deg * (np.pi / 180)  # 转为弧度
+    # 统一随机种子：全局库 + 环境/动作空间
+    random.seed(base_seed)
+    np.random.seed(base_seed)
+    torch.manual_seed(base_seed)
+    try:
+        env.action_space.seed(base_seed)
+        env.observation_space.seed(base_seed)
+    except Exception:
+        pass
     
     agent = DQNAgent(cfg)
     buffer = ReplayBuffer(cfg.buffer_size)
     return_list = []
+    return_list_avg50 = []
     
     total_steps = 0  # 全局总步数
 
@@ -51,7 +75,7 @@ def train_dqn():
         for i in range(cfg.episodes):
             # [说明] 这里移除了 ep_start_time，因为我们要改用区间时间来计算速度，防止分母过小
             agent.update_epsilon(i)
-            state, _ = env.reset(seed=cfg.seed if i == 0 else None)
+            state, _ = env.reset(seed=base_seed + i)
             
             done = False
             episode_return = 0
@@ -70,8 +94,7 @@ def train_dqn():
                 # 步数计数
                 total_steps += 1
                 episode_steps += 1
-                
-                if buffer.size() > cfg.minimal_size:
+                if buffer.size() > cfg.minimal_size and total_steps % cfg.train_freq == 0:
                     b_s, b_a, b_r, b_ns, b_d = buffer.sample(cfg.batch_size)
                     transition_dict = {
                         'states': b_s, 'actions': b_a, 'next_states': b_ns, 
@@ -81,6 +104,17 @@ def train_dqn():
                     if loss is not None:
                         episode_loss += loss
                         update_count += 1
+                
+                # if buffer.size() > cfg.minimal_size:
+                #     b_s, b_a, b_r, b_ns, b_d = buffer.sample(cfg.batch_size)
+                #     transition_dict = {
+                #         'states': b_s, 'actions': b_a, 'next_states': b_ns, 
+                #         'rewards': b_r, 'dones': b_d
+                #     }
+                #     loss = agent.update(transition_dict) 
+                #     if loss is not None:
+                #         episode_loss += loss
+                #         update_count += 1
             
             # --- 数据记录 ---
             return_list.append(episode_return)
@@ -88,8 +122,9 @@ def train_dqn():
                 paper_avg_score = np.mean(return_list[-50:])
             else:
                 paper_avg_score = np.mean(return_list)
-            avg_loss = episode_loss / update_count if update_count > 0 else 0
 
+            avg_loss = episode_loss / update_count if update_count > 0 else 0
+            return_list_avg50.append(paper_avg_score)
             # --- TensorBoard  ---
             writer.add_scalar("Train/01_Episode_Reward", episode_return, i)
             writer.add_scalar("Train/02_Avg_Reward_ep50", paper_avg_score, i)
@@ -137,7 +172,11 @@ def train_dqn():
     writer.close()
     
     plt.figure()
-    plt.plot(return_list)
+    plt.figure(figsize=(10, 6)) # 建议稍微把图画大一点
+    # 第一条线：原始数据 (Raw)
+    plt.plot(return_list, label='Raw Returns', alpha=0.3, color='gray') 
+    # 第二条线：平滑数据 (Average)
+    plt.plot(return_list_avg50, label='Avg (50 eps)', color='red', linewidth=2)
     plt.title('DQN Baseline (CartPole-v0)')
     plt.xlabel('Episodes')
     plt.ylabel('Return')

@@ -151,14 +151,12 @@ class KFDQNAgent:
         else:
             # 阶段 2：混合 TD 学习 (公式 18)
             q_sa = self.q_net(states).gather(1, actions)
-
             with torch.no_grad():
                 # DQN 部分的目标值: max Q_target
                 max_next = self.target_q_net(next_states).max(dim=1)[0].view(-1, 1)
                 # Fuzzy 部分的目标值: Q(s', a_f)
                 # 获取指导模糊系统对下一状态的推荐动作 a_f(s')
                 a_f_next = self.fuzzy_guide(next_states).argmax(dim=1).view(-1, 1)
-
                 # 论文此处使用 Online Q Network 来评估模糊动作的价值，
                 # 而上面的 max 项使用的是 Target Q Network。
                 q_fuzzy_next = self.q_net(next_states).gather(1, a_f_next)

@@ -11,6 +11,11 @@ from tqdm import tqdm
 from config import Config
 # AC 不使用标准的 ReplayBuffer，而是用列表或临时Buffer
 from agents.ac_agent import ACAgent
+from utils.run_artifacts import save_run_config
+import warnings
+
+# 屏蔽 CartPole-v0 的弃用警告
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*CartPole-v0.*")
 
 def train_ac():
     cfg = Config(algo='AC') 
@@ -20,6 +25,19 @@ def train_ac():
     log_dir = os.path.join("results/AC", f"AC_{curr_time}")
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
+    x_threshold = 2.4
+    theta_threshold_deg = 6.4
+    save_run_config(
+        log_dir,
+        cfg,
+        extra={
+            "env_overrides": {
+                "x_threshold": x_threshold,
+                "theta_threshold_deg": theta_threshold_deg,
+                "theta_threshold_radians": theta_threshold_deg * (np.pi / 180),
+            }
+        },
+    )
     writer = SummaryWriter(log_dir=log_dir)
     
     print(f"\n{'='*60}")
@@ -27,12 +45,18 @@ def train_ac():
     print(f"TensorBoard: {log_dir}")
     print(f"{'='*60}\n")
     
+    base_seed = cfg.seed
     env = gym.make(cfg.env_name)
-    env.unwrapped.x_threshold = 2.4 
-    # env.unwrapped.theta_threshold_radians = 41.8 * (np.pi / 180)  # 转为弧度
-    random.seed(cfg.seed)
-    np.random.seed(cfg.seed)
-    torch.manual_seed(cfg.seed)
+    env.unwrapped.x_threshold = x_threshold
+    env.unwrapped.theta_threshold_radians = theta_threshold_deg * (np.pi / 180)  # 转为弧度
+    random.seed(base_seed)
+    np.random.seed(base_seed)
+    torch.manual_seed(base_seed)
+    try:
+        env.action_space.seed(base_seed)
+        env.observation_space.seed(base_seed)
+    except Exception:
+        pass
     
     agent = ACAgent(cfg)
     return_list = []
@@ -48,7 +72,7 @@ def train_ac():
     with tqdm(total=cfg.episodes, desc="Training", unit="ep", dynamic_ncols=True, colour='cyan') as pbar:      
         for i in range(cfg.episodes):
             agent.update_epsilon(i) # AC 通常不需要，但保持接口一致
-            state, _ = env.reset(seed=cfg.seed if i == 0 else None)
+            state, _ = env.reset(seed=base_seed + i)
             
             done = False
             episode_return = 0

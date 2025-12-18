@@ -1,0 +1,46 @@
+{
+  "timestamp": "2025-12-18T21:01:04",
+  "run": {
+    "script": "train_dqn.py",
+    "argv": []
+  },
+  "system": {
+    "python": "3.10.19",
+    "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.31"
+  },
+  "git": {
+    "commit": "44cbb771e4d1c711621b379545a16abf5584b971",
+    "status": "M __pycache__/config.cpython-310.pyc\n M agents/__pycache__/ac_agent.cpython-310.pyc\n M agents/__pycache__/dqn_agent.cpython-310.pyc\n M agents/__pycache__/kfdqn_agent.cpython-310.pyc\n M agents/ac_agent.py\n M agents/dqn_agent.py\n M agents/kfdqn_agent.py\n M config.py\n M models/__pycache__/fuzzy_system.cpython-310.pyc\n M models/fuzzy_system.py\n D results/AC/AC_20251216_1914/ac_result.png\n D results/AC/AC_20251216_1914/events.out.tfevents.1765883694.lst.440714.0\n D results/DQN/DQN_20251216_1913/dqn_baseline_result.png\n D results/DQN/DQN_20251216_1913/events.out.tfevents.1765883584.lst.439066.0\n D results/DoubleDQN/DoubleDQN_20251216_1916/double_dqn_result.png\n D results/DoubleDQN/DoubleDQN_20251216_1916/events.out.tfevents.1765883776.lst.441959.0\n D results/DuelingDQN/DuelingDQN_20251216_1917/dueling_dqn_result.png\n D results/DuelingDQN/DuelingDQN_20251216_1917/events.out.tfevents.1765883866.lst.443303.0\n D results/Reinforce/Reinforce_20251216_1946/events.out.tfevents.1765885585.lst.465023.0\n D results/Reinforce/Reinforce_20251216_1946/reinforce_result.png\n M train_ac.py\n M train_double_dqn.py\n M train_dqn.py\n M train_dueling_dqn.py\n M train_reinforce.py\n M utils/__pycache__/exploration.cpython-310.pyc\n M utils/exploration.py\n?? PROJECT_OVERVIEW.md\n?? __pycache__/train_ac.cpython-38.pyc\n?? __pycache__/train_double_dqn.cpython-38.pyc\n?? __pycache__/train_dqn.cpython-38.pyc\n?? __pycache__/train_dueling_dqn.cpython-38.pyc\n?? __pycache__/train_kfdqn.cpython-38.pyc\n?? __pycache__/train_reinforce.cpython-38.pyc\n?? results/AC/AC_20251218_1142/\n?? results/AC/AC_20251218_2057/\n?? results/DQN/DQN_20251218_1117/\n?? results/DQN/DQN_20251218_2050/\n?? results/DoubleDQN/DoubleDQN_20251218_1121/\n?? results/DuelingDQN/DuelingDQN_20251218_1132/\n?? results/Reinforce/Reinforce_20251218_1145/\n?? results/Reinforce/Reinforce_20251218_2059/\n?? train_kfdqn.py\n?? utils/__pycache__/run_artifacts.cpython-310.pyc\n?? utils/__pycache__/run_artifacts.cpython-38.pyc\n?? utils/run_artifacts.py"
+  },
+  "config": {
+    "algo": "DQN",
+    "env_name": "CartPole-v0",
+    "seed": 42,
+    "device": "cuda",
+    "state_dim": 4,
+    "hidden_dim": 128,
+    "action_dim": 2,
+    "gamma": 0.98,
+    "episodes": 500,
+    "lr": 0.002,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.01,
+    "decay_start": 50,
+    "decay_steps": 50,
+    "h1": null,
+    "h2": null,
+    "m_base": null,
+    "buffer_size": 10000,
+    "minimal_size": 500,
+    "batch_size": 64,
+    "target_update": 100,
+    "train_freq": 1
+  },
+  "extra": {
+    "env_overrides": {
+      "x_threshold": 2.4,
+      "theta_threshold_deg": 3.2,
+      "theta_threshold_radians": 0.05585053606381855
+    }
+  }
+}

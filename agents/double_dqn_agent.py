@@ -31,7 +31,7 @@ class DoubleDQNAgent:
 
     def update(self, transition_dict):
         states = torch.tensor(transition_dict['states'], dtype=torch.float).to(self.device)
-        actions = torch.tensor(transition_dict['actions']).view(-1, 1).to(self.device)
+        actions = torch.tensor(transition_dict['actions'], dtype=torch.long).view(-1, 1).to(self.device)
         rewards = torch.tensor(transition_dict['rewards'], dtype=torch.float).view(-1, 1).to(self.device)
         next_states = torch.tensor(transition_dict['next_states'], dtype=torch.float).to(self.device)
         dones = torch.tensor(transition_dict['dones'], dtype=torch.float).view(-1, 1).to(self.device)
@@ -53,8 +53,9 @@ class DoubleDQNAgent:
         loss.backward()
         self.optimizer.step()
 
+        # 更新计数后按周期同步目标网络，避免首次更新立即触发
+        self.count += 1
         if self.count % self.cfg.target_update == 0:
             self.target_q_net.load_state_dict(self.q_net.state_dict())
-        self.count += 1
         
         return loss.item()
