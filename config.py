@@ -10,7 +10,7 @@ class Config:
         # --- 1. 环境与基础设置 ---
         self.algo = algo
         self.env_name = env_name
-        self.seed = 42
+        self.seed = 69
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # --- 2. 神经网络参数 ---
         self.state_dim = 4
