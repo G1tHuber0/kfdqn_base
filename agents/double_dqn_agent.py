@@ -15,16 +15,16 @@ class DoubleDQNAgent:
         self.target_q_net = QNet(cfg.state_dim, cfg.hidden_dim, cfg.action_dim).to(self.device)
         self.target_q_net.load_state_dict(self.q_net.state_dict())
         
-        self.optimizer = optim.Adam(self.q_net.parameters(), lr=cfg.lr)
-        self.count = 0
+        self.optimizer = torch.optim.Adam(self.q_net.parameters(), lr=cfg.lr)
+        self.update_steps = 0
         self.epsilon = cfg.epsilon_start
 
     def take_action(self, state):
-        if np.random.random() < self.epsilon:
+        if np.random.random() <= self.epsilon:
             return np.random.randint(self.action_dim)
         else:
-            state = torch.tensor(np.array([state]), dtype=torch.float).to(self.device)
-            return self.q_net(state).argmax().item()
+            state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(self.device)
+            return self.q_net(state_tensor).argmax().item()
 
     def update_epsilon(self, episode_idx):
         self.epsilon = get_linear_decay_epsilon(episode_idx, self.cfg)
@@ -47,15 +47,15 @@ class DoubleDQNAgent:
             q_targets = rewards + self.cfg.gamma * max_next_q_values * (1 - dones)
         # -------------------------
 
-        loss = F.mse_loss(q_values, q_targets)
+        loss = torch.mean(F.mse_loss(q_values, q_targets))
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        # 更新计数后按周期同步目标网络，避免首次更新立即触发
-        self.count += 1
-        if self.count % self.cfg.target_update == 0:
+        # 更新目标网络
+        if self.update_steps % self.cfg.target_update == 0:
             self.target_q_net.load_state_dict(self.q_net.state_dict())
+        self.update_steps += 1
         
         return loss.item()

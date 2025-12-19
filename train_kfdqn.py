@@ -13,21 +13,30 @@ from tqdm import tqdm
 from config import Config
 from utils.replay_buffer import ReplayBuffer
 from agents.kfdqn_agent import KFDQNAgent
-from utils.run_artifacts import save_run_config
+from utils.run_artifacts import save_run_config, save_metrics
+from utils.metrics import compute_training_metrics
 import warnings
 # 仅忽略包含 "CartPole-v0" 文本的 DeprecationWarning
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*CartPole-v0.*")
 
 X_THRESHOLD = 2.4
-THETA_THRESHOLD_DEG = 3.2
+
+SILENT = os.environ.get("TRAIN_SILENT", "0") == "1"
+
+def log_line(msg: str):
+    if not SILENT:
+        print(msg)
+
+def log_tqdm(msg: str):
+    if not SILENT:
+        tqdm.write(msg)
 
 
-def make_env(env_name: str = "CartPole-v0", *, x_threshold: float = X_THRESHOLD, theta_threshold_deg: float = THETA_THRESHOLD_DEG):
+def make_env(env_name: str = "CartPole-v0", *, x_threshold: float = X_THRESHOLD):
     # 创建环境
     env = gym.make(env_name)
     # 使用 .unwrapped 访问底层物理属性
     env.unwrapped.x_threshold = x_threshold
-    env.unwrapped.theta_threshold_radians = theta_threshold_deg * (np.pi / 180)  # 转为弧度
     return env
 
 def train_kfdqn():
@@ -35,11 +44,11 @@ def train_kfdqn():
     cfg = Config(algo="KFDQN")
 
     # 2. 准备 TensorBoard 和 日志路径
-    print(f"\n{'='*60}")
-    print(f"开始训练 KFDQN | 环境: {cfg.env_name} | 设备: {cfg.device}")
-    print(f"{'='*60}")
-    print("查看训练过程数据，请终端运行: tensorboard --logdir=results")
-    print(f"{'='*60}\n")
+    log_line(f"\n{'='*60}")
+    log_line(f"开始训练 KFDQN | 环境: {cfg.env_name} | 设备: {cfg.device}")
+    log_line(f"{'='*60}")
+    log_line("查看训练过程数据，请终端运行: tensorboard --logdir=results")
+    log_line(f"{'='*60}\n")
     # --- TensorBoard 配置 ---
     curr_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     log_dir = os.path.join("results/KFDQN", f"KFDQN_{curr_time}")
@@ -51,8 +60,6 @@ def train_kfdqn():
         extra={
             "env_overrides": {
                 "x_threshold": X_THRESHOLD,
-                "theta_threshold_deg": THETA_THRESHOLD_DEG,
-                "theta_threshold_radians": THETA_THRESHOLD_DEG * (np.pi / 180),
             }
         },
     )
@@ -60,7 +67,7 @@ def train_kfdqn():
 
     # 3. 环境与种子设置
     base_seed = cfg.seed
-    env = make_env(cfg.env_name, x_threshold=X_THRESHOLD, theta_threshold_deg=THETA_THRESHOLD_DEG)
+    env = make_env(cfg.env_name, x_threshold=X_THRESHOLD)
 
     np.random.seed(base_seed)
     random.seed(base_seed)
@@ -77,14 +84,15 @@ def train_kfdqn():
 
     # 5. 训练循环变量
     return_list = []
-    return_list_avg50 = []
     total_steps = 0
     last_log_time = time.time()
     last_log_total_steps = 0
+    current_sps = 0
     
 
     # 使用 tqdm 显示进度条
-    with tqdm(total=cfg.episodes, desc="Training", unit="ep", dynamic_ncols=True, colour='red') as pbar:
+    tqdm_position = int(os.environ.get("TQDM_POSITION", "0"))
+    with tqdm(total=cfg.episodes, desc="KFDQN", unit="ep", dynamic_ncols=True, colour='red', position=tqdm_position, leave=True) as pbar:
         for ep in range(cfg.episodes):
             # [关键] 更新参数: Epsilon, 混合权重 m/n, 硬更新检查
             agent.update_parameters(ep)
@@ -120,7 +128,7 @@ def train_kfdqn():
                 total_steps += 1
 
                 # 经验回放训练
-                if buffer.size() >= cfg.minimal_size:
+                if buffer.size() >= cfg.minimal_size :
                     b_s, b_a, b_r, b_ns, b_d = buffer.sample(cfg.batch_size)
                     # 构造字典传入 agent.update
                     transition_dict = {
@@ -141,17 +149,13 @@ def train_kfdqn():
                 aq_hya_rate = count_aq / count_hya
             return_list.append(ep_return)
 
-            # 计算最近50回合平均分
-            paper_avg = float(np.mean(return_list[-50:])) if len(return_list) >= 50 else float(np.mean(return_list))
-            return_list_avg50.append(paper_avg)
             avg_q_loss = ep_q_loss / max(1, updates)
             avg_fuzzy_loss = ep_fuzzy_loss / max(1, updates)
 
             # TensorBoard 记录
             writer.add_scalar("Train/01_Episode_Reward", ep_return, ep)
-            writer.add_scalar("Train/02_Avg_Reward_ep50", paper_avg, ep)
-            writer.add_scalar("Train/03_Epsilon", agent.epsilon, ep)
-            writer.add_scalar("Train/04_Q_Loss", avg_q_loss, ep)
+            writer.add_scalar("Train/02_Epsilon", agent.epsilon, ep)
+            writer.add_scalar("Train/03_Q_Loss", avg_q_loss, ep)
             writer.add_scalar("actions/01_Count_a_f", count_af, ep)
             writer.add_scalar("actions/02_Count_hya", count_hya, ep)
             writer.add_scalar("actions/03_Aq_in_Hya_Rate", aq_hya_rate, ep)
@@ -167,10 +171,18 @@ def train_kfdqn():
                 sps = int((total_steps - last_log_total_steps) / max(1e-6, (now - last_log_time)))
                 last_log_time = now
                 last_log_total_steps = total_steps
+                current_sps = sps
                 
-                tqdm.write(f"Ep:{ep+1} | AvgRw:{paper_avg:.1f} | Eps:{agent.epsilon:.2f} | m:{agent.m:.2f} | SPS:{sps}")
+                log_tqdm(f"Ep:{ep+1} | Reward:{ep_return:.1f} | Eps:{agent.epsilon:.2f} | m:{agent.m:.2f} | SPS:{sps}")
 
+            pbar.set_postfix({
+                'step': f"{current_sps}/s",
+                'total_steps': f"{total_steps}"
+            })
             pbar.update(1)
+
+    metrics = compute_training_metrics(return_list, None, success_threshold=200.0, cumulative_target=50000.0)
+    save_metrics(log_dir, metrics)
 
     writer.close()
     env.close()
@@ -178,19 +190,18 @@ def train_kfdqn():
     # 6. 保存结果图
     plt.figure(figsize=(10, 6)) # 建议稍微把图画大一点
     # 第一条线：原始数据 (Raw)
-    plt.plot(return_list, label='Raw Returns', alpha=0.3, color='gray') 
-    # 第二条线：平滑数据 (Average)
-    plt.plot(return_list_avg50, label='Avg (50 eps)', color='red', linewidth=2)
+    plt.plot(return_list, label='Returns', color='#66c2ff') 
     plt.title('KFDQN (CartPole-v0)')
     plt.xlabel('Episodes')
     plt.ylabel('Return')
     # --- 限制区域 ---
     plt.xlim(0, 500)
-    plt.ylim(49, 201) 
+    plt.ylim(0, 201) 
+    plt.yticks([0, 50, 100, 150, 200])
     plt.legend()  # <--- 关键：必须加这句才能显示 'Raw Returns' 和 'Avg' 的标签
     plt.grid(True, alpha=0.3) # 加上网格线更方便看读数
     plt.savefig(os.path.join(log_dir, 'kfdqn_result.png'))
-    print(f"训练结束，结果图已保存至: {log_dir}\n")
+    log_line(f"训练结束，结果图已保存至: {log_dir}\n")
 
 if __name__ == "__main__":
     train_kfdqn()

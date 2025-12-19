@@ -10,6 +10,7 @@ from models.fuzzy_system import FuzzySystem
 from utils.exploration import get_linear_decay_epsilon
 
 
+
 class KFDQNAgent:
     """
     符合论文原文的 KFDQN 实现 (针对 CartPole):
@@ -62,6 +63,11 @@ class KFDQNAgent:
 
         # 内部计数器
         self._episode_idx = 0
+        self.update_steps = 0
+
+        # 消融开关
+        self.use_hybrid_action = getattr(cfg, "use_hybrid_action", True)
+        self.use_hybrid_learning = getattr(cfg, "use_hybrid_learning", True)
 
     def _hard_update_targets(self):
         self.target_q_net.load_state_dict(self.q_net.state_dict())# 更新 Target Q Network
@@ -100,6 +106,14 @@ class KFDQNAgent:
         if episode_idx is None:
             episode_idx = self._episode_idx
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+
+        # 如果关闭混合动作策略，退化为 epsilon-greedy on Q
+        if not self.use_hybrid_action:
+            if np.random.rand() < self.epsilon:
+                return np.random.randint(self.cfg.action_dim), 'eps', None
+            q_values = self.q_net(state)
+            return int(q_values.argmax(dim=1).item()), 'q_only', None
+
         # 获取 Q 值和模糊系统输出
         q_values = self.q_net(state)
         fuzzy_logits = self.fuzzy_guide(state)
@@ -107,11 +121,6 @@ class KFDQNAgent:
         a_f = int(fuzzy_logits.argmax(dim=1).item())
         if (np.random.rand() < self.epsilon) or (episode_idx < self.cfg.ep_r):
             return a_f,'a_f',None
-        
-        # # 混合动作 (公式 16): argmax(h1 * softmax(kf) + h2 * softmax(Q))
-        # T = 200
-        # f_score = F.softmax(fuzzy_logits, dim=1)
-        # q_score = F.softmax(q_values / T, dim=1)
         
         # 1. 先把两者都变成标准正态分布 (Mean=0, Std=1)
         q_norm = self.standardize(q_values)
@@ -141,45 +150,57 @@ class KFDQNAgent:
         dones = torch.tensor(transition_dict["dones"], dtype=torch.float32, device=self.device).view(-1, 1)
 
         # ========= 第一部分: Q 网络更新 =========
-        if episode_idx < self.cfg.ep_r:
-            # 阶段 1：监督学习 (公式 19)
-            # 此时 Q 网络去模仿模糊系统的输出
-            with torch.no_grad():
-                a_f_labels = self.fuzzy_guide(states).argmax(dim=1)  # [B]
-            q_logits = self.q_net(states)  # [B, A]
-            q_loss = F.cross_entropy(q_logits, a_f_labels)
-        else:
-            # 阶段 2：混合 TD 学习 (公式 18)
+        if not self.use_hybrid_learning:
+            # 纯 DQN 目标（无混合学习）
             q_sa = self.q_net(states).gather(1, actions)
             with torch.no_grad():
-                # DQN 部分的目标值: max Q_target
                 max_next = self.target_q_net(next_states).max(dim=1)[0].view(-1, 1)
-                # Fuzzy 部分的目标值: Q(s', a_f)
-                # 获取指导模糊系统对下一状态的推荐动作 a_f(s')
-                a_f_next = self.fuzzy_guide(next_states).argmax(dim=1).view(-1, 1)
-                # 论文此处使用 Online Q Network 来评估模糊动作的价值，
-                # 而上面的 max 项使用的是 Target Q Network。
-                q_fuzzy_next = self.q_net(next_states).gather(1, a_f_next)
-
-                # 混合目标值: m * DQN目标 + n * Fuzzy目标
-                hybrid_next = self.m * max_next + self.n * q_fuzzy_next
-                q_target = rewards + self.cfg.gamma * hybrid_next * (1.0 - dones)
-
+                q_target = rewards + self.cfg.gamma * max_next * (1.0 - dones)
             q_loss = F.mse_loss(q_sa, q_target)
+        else:
+            if episode_idx < self.cfg.ep_r:
+                # 阶段 1：监督学习 (公式 19)
+                with torch.no_grad():
+                    a_f_labels = self.fuzzy_guide(states).argmax(dim=1)  # [B]
+                q_logits = self.q_net(states)  # [B, A]
+                q_loss = F.cross_entropy(q_logits, a_f_labels)
+            else:
+                # 阶段 2：混合 TD 学习 (公式 18)
+                q_sa = self.q_net(states).gather(1, actions)
+                with torch.no_grad():
+                    # DQN 部分的目标值: max Q_target
+                    max_next = self.target_q_net(next_states).max(dim=1)[0].view(-1, 1)
+                    # Fuzzy 部分的目标值: Q(s', a_f)
+                    a_f_next = self.fuzzy_guide(next_states).argmax(dim=1).view(-1, 1)
+                    q_fuzzy_next = self.q_net(next_states).gather(1, a_f_next)
+
+                    # 混合目标值: m * DQN目标 + n * Fuzzy目标
+                    hybrid_next = self.m * max_next + self.n * q_fuzzy_next
+                    q_target = rewards + self.cfg.gamma * hybrid_next * (1.0 - dones)
+
+                q_loss = F.mse_loss(q_sa, q_target)
 
         # 反向传播更新 Q 网络
         self.optimizer.zero_grad()
         q_loss.backward()
+        if getattr(self.cfg, "grad_clip_norm", None):
+            torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=self.cfg.grad_clip_norm)
         self.optimizer.step()
 
-        # ========= 第二部分: 知识更新 (公式 13) =========
-        # 利用 Replay Buffer 中的真实状态-动作数据来更新“学习模糊系统”
-        # 这是一种自模仿或行为克隆，使模糊系统适应实际产生的有效策略
-        fuzzy_logits_learn = self.fuzzy_learn(states)
-        fuzzy_loss = F.cross_entropy(fuzzy_logits_learn, actions.squeeze(1))
         
-        self.fuzzy_optimizer.zero_grad()
-        fuzzy_loss.backward()
-        self.fuzzy_optimizer.step()
+        if self.update_steps % self.cfg.target_update == 0:
+            self.target_q_net.load_state_dict(self.q_net.state_dict())
+        self.update_steps += 1
+
+        # ========= 第二部分: 知识更新 (公式 13) =========
+        if self.use_hybrid_learning:
+            fuzzy_logits_learn = self.fuzzy_learn(states)
+            fuzzy_loss = F.cross_entropy(fuzzy_logits_learn, actions.squeeze(1))
+            
+            self.fuzzy_optimizer.zero_grad()
+            fuzzy_loss.backward()
+            if getattr(self.cfg, "grad_clip_norm", None):
+                torch.nn.utils.clip_grad_norm_(self.fuzzy_learn.parameters(), max_norm=self.cfg.grad_clip_norm)
+            self.fuzzy_optimizer.step()
 
         return {"q_loss": float(q_loss.item()), "fuzzy_loss": float(fuzzy_loss.item())}

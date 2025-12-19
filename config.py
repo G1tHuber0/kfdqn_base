@@ -21,10 +21,12 @@ class Config:
         self.episodes = 500     
         self.lr = 0.002   
         # 探索参数
-        self.epsilon_start = 1.0
+        self.epsilon_start = 0.01
         self.epsilon_end = 0.01
-        self.decay_start =50
-        self.decay_steps = 50      
+        self.decay_start =0
+        self.decay_steps = 0      
+        # 梯度剪裁（<=0 或 None 不启用）
+        self.grad_clip_norm = None
         # --- 4. 初始化特定算法参数 ---
         # 先给 KFDQN 特有参数赋默认值 None，防止报错
         self.h1 = None
@@ -41,8 +43,9 @@ class Config:
             self.buffer_size = 10000 
             self.minimal_size = 500  
             self.batch_size = 64     
-            self.target_update = 100
-            self.train_freq =1
+            self.target_update = 10
+            self.train_freq = 1
+            self.gradient_steps = 1 
         # Group B: Reinforce
         elif self.algo == 'Reinforce':
             self.buffer_size = None
@@ -64,7 +67,15 @@ class Config:
             self.buffer_size = 10000
             self.minimal_size = 500
             self.batch_size = 64
-            self.target_update = None
+            self.target_update = 10
+            self.train_freq =1
+
+            # 探索参数
+            self.epsilon_start = 0.01
+            self.epsilon_end = 0.01
+            self.decay_start =0
+            self.decay_steps = 0 
+
             # KFDQN 关键超参（按论文）
             self.h1 = 0.1
             self.h2 = 0.08
@@ -75,7 +86,7 @@ class Config:
             # Eq.(34): m = 0.35 + 0.6 * exp(-i)
             self.m_base = 0.35
             self.m_decay = 0.6
-            self.m_tau = 125  # 严格复现：不使用 /m_tau
+            self.m_tau = 1  # 严格复现：不使用 /m_tau
             # =========================
             # Fuzzy 学习率与动作强度（工程上常设小一些更稳）
             # =========================

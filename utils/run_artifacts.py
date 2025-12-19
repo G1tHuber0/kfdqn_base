@@ -74,3 +74,25 @@ def save_run_config(
     except Exception:
         # YAML 依赖不是必需：没有 PyYAML 时自动跳过，不影响训练。
         pass
+
+
+def save_metrics(
+    log_dir: str,
+    metrics: Dict[str, Any],
+    *,
+    json_name: str = "metrics.json",
+    yaml_name: str = "metrics.yaml",
+) -> None:
+    _os.makedirs(log_dir, exist_ok=True)
+    json_path = _os.path.join(log_dir, json_name)
+    with open(json_path, "w", encoding="utf-8") as f:
+        _json.dump(metrics, f, ensure_ascii=False, indent=2)
+
+    try:
+        import yaml  # type: ignore
+
+        yaml_path = _os.path.join(log_dir, yaml_name)
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(metrics, f, allow_unicode=True, sort_keys=False)
+    except Exception:
+        pass

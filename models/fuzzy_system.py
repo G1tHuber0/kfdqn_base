@@ -130,6 +130,7 @@ class FuzzySystem(nn.Module):
                 # 规则后件：推荐动作给 SUPPORT，另一动作给 OPPOSE
                 self.rule_weights[i, 0] = SUPPORT if a == 0 else OPPOSE
                 self.rule_weights[i, 1] = SUPPORT if a == 1 else OPPOSE
+                
     def gaussian(self, x, mu, sigma):
         return torch.exp(-0.5 * ((x - mu) / sigma) ** 2)
 
