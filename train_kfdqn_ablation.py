@@ -20,7 +20,6 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*CartPole-v0.*")
 
 X_THRESHOLD = 2.4
-THETA_THRESHOLD_DEG = 6.4
 
 SILENT = os.environ.get("TRAIN_SILENT", "0") == "1"
 
@@ -33,10 +32,9 @@ def log_tqdm(msg: str):
         tqdm.write(msg)
 
 
-def make_env(env_name: str = "CartPole-v0", *, x_threshold: float = X_THRESHOLD, theta_threshold_deg: float = THETA_THRESHOLD_DEG):
+def make_env(env_name: str = "CartPole-v0", *, x_threshold: float = X_THRESHOLD):
     env = gym.make(env_name)
     env.unwrapped.x_threshold = x_threshold
-    env.unwrapped.theta_threshold_radians = theta_threshold_deg * (np.pi / 180)
     return env
 
 
@@ -44,8 +42,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="KFDQN Ablation Training")
     parser.add_argument(
         "--variant",
-        choices=["full", "no_hya", "no_hyl"],
-        default="no_hya",
+        choices=["full", "no_hya", "no_hyl", "none"],
+        default="none",
         help="full: 原始KFDQN; no_hya: 去除混合动作策略; no_hyl: 去除混合学习策略",
     )
     return parser.parse_args()
@@ -62,6 +60,10 @@ def main():
         cfg.use_hybrid_action = True
         cfg.use_hybrid_learning = False
         variant_tag = "no_hyl"
+    elif args.variant == "none":
+        cfg.use_hybrid_action = False
+        cfg.use_hybrid_learning = False
+        variant_tag = "none"
     else:
         cfg.use_hybrid_action = True
         cfg.use_hybrid_learning = True
@@ -77,8 +79,7 @@ def main():
             "variant": variant_tag,
             "env_overrides": {
                 "x_threshold": X_THRESHOLD,
-                "theta_threshold_deg": THETA_THRESHOLD_DEG,
-                "theta_threshold_radians": THETA_THRESHOLD_DEG * (np.pi / 180),
+
             },
         },
     )
@@ -90,7 +91,7 @@ def main():
     log_line(f"{'='*60}\n")
 
     base_seed = cfg.seed
-    env = make_env(cfg.env_name, x_threshold=X_THRESHOLD, theta_threshold_deg=THETA_THRESHOLD_DEG)
+    env = make_env(cfg.env_name, x_threshold=X_THRESHOLD)
 
     np.random.seed(base_seed)
     random.seed(base_seed)
@@ -120,9 +121,15 @@ def main():
             ep_q_loss = 0.0
             ep_fuzzy_loss = 0.0
             updates = 0
+            count_af = 0
+            count_hya = 0
 
             while not done:
-                action, _, _ = agent.take_action(state, episode_idx=ep)
+                action, a_type, _ = agent.take_action(state, episode_idx=ep)
+                if a_type == 'a_f':
+                    count_af += 1
+                elif a_type == 'hya':
+                    count_hya += 1
                 next_state, reward, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
 
@@ -144,7 +151,7 @@ def main():
                     ep_q_loss += losses["q_loss"]
                     ep_fuzzy_loss += losses["fuzzy_loss"]
                     updates += 1
-
+            print(f"Episode {ep+1}: a_f count = {count_af}, hya count = {count_hya}")
             return_list.append(ep_return)
             avg_q_loss = ep_q_loss / max(1, updates)
             avg_fuzzy_loss = ep_fuzzy_loss / max(1, updates)
@@ -170,7 +177,7 @@ def main():
     env.close()
 
     plt.figure(figsize=(10, 6))
-    plt.plot(return_list, label='Raw Returns', alpha=0.3, color='#66c2ff') 
+    plt.plot(return_list,  alpha=1, color="#054d7e") 
     plt.title(f'KFDQN Ablation - {variant_tag}')
     plt.xlabel('Episodes')
     plt.ylabel('Return')

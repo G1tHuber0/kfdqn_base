@@ -71,7 +71,8 @@ class KFDQNAgent:
 
     def _hard_update_targets(self):
         self.target_q_net.load_state_dict(self.q_net.state_dict())# 更新 Target Q Network
-        self.fuzzy_guide.load_state_dict(self.fuzzy_learn.state_dict())# 将"学习好的模糊参数"复制给"指导模糊系统"
+        if self.use_hybrid_learning:
+            self.fuzzy_guide.load_state_dict(self.fuzzy_learn.state_dict())# 将"学习好的模糊参数"复制给"指导模糊系统"
 
     def update_parameters(self, episode_idx: int):
         """每回合调用一次：更新 epsilon，更新 m/n 权重，以及执行周期性硬更新。"""
@@ -202,5 +203,7 @@ class KFDQNAgent:
             if getattr(self.cfg, "grad_clip_norm", None):
                 torch.nn.utils.clip_grad_norm_(self.fuzzy_learn.parameters(), max_norm=self.cfg.grad_clip_norm)
             self.fuzzy_optimizer.step()
-
-        return {"q_loss": float(q_loss.item()), "fuzzy_loss": float(fuzzy_loss.item())}
+            return {"q_loss": float(q_loss.item()), "fuzzy_loss": float(fuzzy_loss.item())}
+        else:
+            return {"q_loss": float(q_loss.item()), "fuzzy_loss": 0.0}
+        

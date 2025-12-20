@@ -64,10 +64,14 @@ runpy.run_path(script, run_name="__main__")
 """
 
 
+default_runs =1
+default_seed =2
+default_seed_step =1
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run all training scripts multiple times with different seeds.")
-    parser.add_argument("--runs", type=int, default=50, help="Number of repeated runs (default: 50).")
-    parser.add_argument("--base-seed", type=int, default=42, help="Base seed for run 0 (default: 42).")
+    parser.add_argument("--runs", type=int, default=1, help="Number of repeated runs (default: 50).")
+    parser.add_argument("--base-seed", type=int, default=default_seed, help="Base seed for run 0 (default: 42).")
     parser.add_argument("--seed-step", type=int, default=1, help="Seed increment per run (default: 1).")
     parser.add_argument(
         "--continue-on-fail",

@@ -85,9 +85,6 @@ def train_kfdqn():
     # 5. 训练循环变量
     return_list = []
     total_steps = 0
-    last_log_time = time.time()
-    last_log_total_steps = 0
-    current_sps = 0
     
 
     # 使用 tqdm 显示进度条
@@ -166,17 +163,8 @@ def train_kfdqn():
 
             # 控制台输出 (每10轮更新一次详细信息)
             if (ep + 1) % 10 == 0:
-                now = time.time()
-                # 计算 SPS (Steps Per Second)
-                sps = int((total_steps - last_log_total_steps) / max(1e-6, (now - last_log_time)))
-                last_log_time = now
-                last_log_total_steps = total_steps
-                current_sps = sps
-                
-                log_tqdm(f"Ep:{ep+1} | Reward:{ep_return:.1f} | Eps:{agent.epsilon:.2f} | m:{agent.m:.2f} | SPS:{sps}")
-
+                log_tqdm(f"Ep:{ep+1} | Reward:{ep_return:.1f} | Eps:{agent.epsilon:.2f} | m:{agent.m:.2f} | ")
             pbar.set_postfix({
-                'step': f"{current_sps}/s",
                 'total_steps': f"{total_steps}"
             })
             pbar.update(1)
@@ -190,7 +178,7 @@ def train_kfdqn():
     # 6. 保存结果图
     plt.figure(figsize=(10, 6)) # 建议稍微把图画大一点
     # 第一条线：原始数据 (Raw)
-    plt.plot(return_list, label='Returns', color='#66c2ff') 
+    plt.plot(return_list,  color="#005d9b") 
     plt.title('KFDQN (CartPole-v0)')
     plt.xlabel('Episodes')
     plt.ylabel('Return')

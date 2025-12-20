@@ -133,7 +133,7 @@ def train_double_dqn():
     
     plt.figure()
     plt.figure(figsize=(10, 6))
-    plt.plot(return_list, label='Returns', color='#d7191c')
+    plt.plot(return_list, color="#004ca3")
     plt.title('Double DQN (CartPole-v0)')
     plt.xlabel('Episodes')
     plt.ylabel('Return')

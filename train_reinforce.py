@@ -78,7 +78,6 @@ def train_reinforce():
     return_list = []
     
     total_steps = 0 
-    last_log_time = time.time() 
     last_log_total_steps = 0    
     current_sps = 0             
 
@@ -126,12 +125,7 @@ def train_reinforce():
 
             # --- 屏幕打印 ---
             if (i + 1) % 10 == 0:
-                now = time.time()
-                elapsed_time = now - last_log_time
                 steps_diff = total_steps - last_log_total_steps
-                if elapsed_time > 0:
-                    current_sps = int(steps_diff / elapsed_time)
-                last_log_time = now
                 last_log_total_steps = total_steps
 
                 log_msg = (
@@ -142,7 +136,6 @@ def train_reinforce():
                 log_tqdm(log_msg)
 
             pbar.set_postfix({
-                'step': f"{current_sps}/s",
                 'total_steps': f"{total_steps}" 
             })
             pbar.update(1)
@@ -153,7 +146,7 @@ def train_reinforce():
     writer.close()
     
     plt.figure()
-    plt.plot(return_list, color='#756bb1')
+    plt.plot(return_list, color="#034fc2")
     plt.title('REINFORCE (CartPole-v0)')
     plt.xlabel('Episodes')
     plt.ylabel('Return')

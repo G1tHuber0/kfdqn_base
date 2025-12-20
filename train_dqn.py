@@ -131,7 +131,7 @@ def train_dqn():
     
     plt.figure()
     plt.figure(figsize=(10, 6))
-    plt.plot(return_list, label='Returns', color='#003f5c') 
+    plt.plot(return_list, color='#003f5c') 
     plt.title('DQN Baseline (CartPole-v0)')
     plt.xlabel('Episodes')
     plt.ylabel('Return')
