@@ -9,13 +9,11 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
         # Table 4: Input:4 -> hidden:128 -> Output:2
         self.fc1 = nn.Linear(state_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc3 = nn.Linear(hidden_dim, action_dim)
+        self.fc2 = nn.Linear(hidden_dim, action_dim)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        return self.fc2(x)
     
 # 2. Dueling Q 网络
 class DuelingQNet(nn.Module):

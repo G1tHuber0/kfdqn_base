@@ -1,12 +1,9 @@
 
 import gymnasium as gym
-import numpy as np
-import random
 import time
 import datetime
 import os
 import matplotlib.pyplot as plt
-import torch
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -15,6 +12,7 @@ from utils.replay_buffer import ReplayBuffer
 from agents.kfdqn_agent import KFDQNAgent
 from utils.run_artifacts import save_run_config, save_metrics
 from utils.metrics import compute_training_metrics
+from utils.seeding import episode_seed, seed_everything
 import warnings
 # 仅忽略包含 "CartPole-v0" 文本的 DeprecationWarning
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*CartPole-v0.*")
@@ -42,6 +40,7 @@ def make_env(env_name: str = "CartPole-v0", *, x_threshold: float = X_THRESHOLD)
 def train_kfdqn():
     # 1. 初始化配置 (自动加载 KFDQN 参数)
     cfg = Config(algo="KFDQN")
+    cfg.ep_r = 50  # 强制引导阶段长度]
 
     # 2. 准备 TensorBoard 和 日志路径
     log_line(f"\n{'='*60}")
@@ -69,14 +68,7 @@ def train_kfdqn():
     base_seed = cfg.seed
     env = make_env(cfg.env_name, x_threshold=X_THRESHOLD)
 
-    np.random.seed(base_seed)
-    random.seed(base_seed)
-    torch.manual_seed(base_seed)
-    try:
-        env.action_space.seed(base_seed)
-        env.observation_space.seed(base_seed)
-    except Exception:
-        pass
+    seed_everything(base_seed, env=env)
 
     # 4. 初始化 Agent 和 Buffer
     agent = KFDQNAgent(cfg)
@@ -94,7 +86,7 @@ def train_kfdqn():
             # [关键] 更新参数: Epsilon, 混合权重 m/n, 硬更新检查
             agent.update_parameters(ep)
             # 重置环境
-            state, _ = env.reset(seed=base_seed + ep)
+            state, _ = env.reset(seed=episode_seed(base_seed, ep))
 
             done = False
             ep_return = 0.0
@@ -176,7 +168,7 @@ def train_kfdqn():
     env.close()
     
     # 6. 保存结果图
-    plt.figure(figsize=(10, 6)) # 建议稍微把图画大一点
+    plt.figure(figsize=(10, 6)) 
     # 第一条线：原始数据 (Raw)
     plt.plot(return_list,  color="#005d9b") 
     plt.title('KFDQN (CartPole-v0)')
@@ -184,9 +176,8 @@ def train_kfdqn():
     plt.ylabel('Return')
     # --- 限制区域 ---
     plt.xlim(0, 500)
-    plt.ylim(0, 201) 
+    plt.ylim(0, 205)
     plt.yticks([0, 50, 100, 150, 200])
-    plt.legend()  # <--- 关键：必须加这句才能显示 'Raw Returns' 和 'Avg' 的标签
     plt.grid(True, alpha=0.3) # 加上网格线更方便看读数
     plt.savefig(os.path.join(log_dir, 'kfdqn_result.png'))
     log_line(f"训练结束，结果图已保存至: {log_dir}\n")

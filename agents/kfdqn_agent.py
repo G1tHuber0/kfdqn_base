@@ -108,32 +108,32 @@ class KFDQNAgent:
             episode_idx = self._episode_idx
         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
-        # 如果关闭混合动作策略，退化为 epsilon-greedy on Q
-        if not self.use_hybrid_action:
+        if self.use_hybrid_action:
+            # 获取 Q 值和模糊系统输出
+            q_values = self.q_net(state)
+            fuzzy_logits = self.fuzzy_guide(state)
+            # 模糊系统的推荐动作
+            a_f = int(fuzzy_logits.argmax(dim=1).item())
+            if (np.random.rand() < self.epsilon) or (episode_idx < self.cfg.ep_r):
+                return a_f,'a_f',None
+            
+            # 1. 先把两者都变成标准正态分布 (Mean=0, Std=1)
+            q_norm = self.standardize(q_values)
+            f_norm = self.standardize(fuzzy_logits)
+            # 2. 然后再过 Softmax 
+            q_score = F.softmax(q_norm, dim=1)
+            f_score = F.softmax(f_norm, dim=1)
+
+            hybrid_score = self.cfg.h1 * f_score + self.cfg.h2 * q_score
+            hya=int(hybrid_score.argmax(dim=1).item())
+            a_q= int(q_values.argmax(dim=1).item())
+            return hya,'hya',a_q
+        else:
+            # 如果关闭混合动作策略，退化为 epsilon-greedy on Q
             if np.random.rand() < self.epsilon:
                 return np.random.randint(self.cfg.action_dim), 'eps', None
             q_values = self.q_net(state)
             return int(q_values.argmax(dim=1).item()), 'q_only', None
-
-        # 获取 Q 值和模糊系统输出
-        q_values = self.q_net(state)
-        fuzzy_logits = self.fuzzy_guide(state)
-        # 模糊系统的推荐动作
-        a_f = int(fuzzy_logits.argmax(dim=1).item())
-        if (np.random.rand() < self.epsilon) or (episode_idx < self.cfg.ep_r):
-            return a_f,'a_f',None
-        
-        # 1. 先把两者都变成标准正态分布 (Mean=0, Std=1)
-        q_norm = self.standardize(q_values)
-        f_norm = self.standardize(fuzzy_logits)
-        # 2. 然后再过 Softmax 
-        q_score = F.softmax(q_norm, dim=1)
-        f_score = F.softmax(f_norm, dim=1)
-
-        hybrid_score = self.cfg.h1 * f_score + self.cfg.h2 * q_score
-        hya=int(hybrid_score.argmax(dim=1).item())
-        a_q= int(q_values.argmax(dim=1).item())
-        return hya,'hya',a_q
     
     def update(self, transition_dict: Dict[str, Any], episode_idx: Optional[int] = None) -> Dict[str, float]:
         """
@@ -151,14 +151,7 @@ class KFDQNAgent:
         dones = torch.tensor(transition_dict["dones"], dtype=torch.float32, device=self.device).view(-1, 1)
 
         # ========= 第一部分: Q 网络更新 =========
-        if not self.use_hybrid_learning:
-            # 纯 DQN 目标（无混合学习）
-            q_sa = self.q_net(states).gather(1, actions)
-            with torch.no_grad():
-                max_next = self.target_q_net(next_states).max(dim=1)[0].view(-1, 1)
-                q_target = rewards + self.cfg.gamma * max_next * (1.0 - dones)
-            q_loss = F.mse_loss(q_sa, q_target)
-        else:
+        if self.use_hybrid_learning:
             if episode_idx < self.cfg.ep_r:
                 # 阶段 1：监督学习 (公式 19)
                 with torch.no_grad():
@@ -180,7 +173,14 @@ class KFDQNAgent:
                     q_target = rewards + self.cfg.gamma * hybrid_next * (1.0 - dones)
 
                 q_loss = F.mse_loss(q_sa, q_target)
-
+        else:
+            # 纯 DQN 目标（无混合学习）
+            q_sa = self.q_net(states).gather(1, actions)
+            with torch.no_grad():
+                max_next = self.target_q_net(next_states).max(dim=1)[0].view(-1, 1)
+                q_target = rewards + self.cfg.gamma * max_next * (1.0 - dones)
+            q_loss = F.mse_loss(q_sa, q_target)
+            
         # 反向传播更新 Q 网络
         self.optimizer.zero_grad()
         q_loss.backward()

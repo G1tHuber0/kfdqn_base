@@ -1,0 +1,25 @@
+{
+  "total_return": 99050,
+  "episodes": 500,
+  "success_threshold": 200.0,
+  "success_rate": 0.944,
+  "episodes_to_cumulative_target": 255,
+  "avg_reward_50_mad_to_success_threshold": 1.4504656319290448,
+  "reward_bins": [
+    {
+      "range": "<=100",
+      "count": 0,
+      "ratio": 0.0
+    },
+    {
+      "range": "(100,200)",
+      "count": 28,
+      "ratio": 0.056
+    },
+    {
+      "range": "==200",
+      "count": 472,
+      "ratio": 0.944
+    }
+  ]
+}

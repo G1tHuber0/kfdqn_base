@@ -64,9 +64,9 @@ runpy.run_path(script, run_name="__main__")
 """
 
 
-default_runs =1
-default_seed =2
-default_seed_step =1
+default_runs = 1
+default_seed = 66
+default_seed_step = 1
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run all training scripts multiple times with different seeds.")

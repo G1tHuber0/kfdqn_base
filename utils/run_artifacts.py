@@ -4,7 +4,6 @@ import datetime as _dt
 import json as _json
 import os as _os
 import platform as _platform
-import subprocess as _subprocess
 import sys as _sys
 from typing import Any, Dict, Optional
 
@@ -19,15 +18,6 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
-def _safe_git(cmd: list[str]) -> Optional[str]:
-    repo_root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
-    try:
-        out = _subprocess.check_output(cmd, cwd=repo_root, stderr=_subprocess.DEVNULL, text=True)
-        return out.strip()
-    except Exception:
-        return None
-
-
 def build_run_config(cfg: Any, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     data: Dict[str, Any] = {
         "timestamp": _dt.datetime.now().isoformat(timespec="seconds"),
@@ -38,10 +28,6 @@ def build_run_config(cfg: Any, extra: Optional[Dict[str, Any]] = None) -> Dict[s
         "system": {
             "python": _sys.version.split()[0],
             "platform": _platform.platform(),
-        },
-        "git": {
-            "commit": _safe_git(["git", "rev-parse", "HEAD"]),
-            "status": _safe_git(["git", "status", "--porcelain"]),
         },
         "config": {k: _jsonable(v) for k, v in vars(cfg).items()},
     }
@@ -56,7 +42,7 @@ def save_run_config(
     *,
     extra: Optional[Dict[str, Any]] = None,
     json_name: str = "config.json",
-    yaml_name: str = "config.yaml",
+    yaml_name: Optional[str] = None,
 ) -> None:
     _os.makedirs(log_dir, exist_ok=True)
     data = build_run_config(cfg, extra=extra)
@@ -65,34 +51,15 @@ def save_run_config(
     with open(json_path, "w", encoding="utf-8") as f:
         _json.dump(data, f, ensure_ascii=False, indent=2)
 
-    try:
-        import yaml  # type: ignore
-
-        yaml_path = _os.path.join(log_dir, yaml_name)
-        with open(yaml_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
-    except Exception:
-        # YAML 依赖不是必需：没有 PyYAML 时自动跳过，不影响训练。
-        pass
-
 
 def save_metrics(
     log_dir: str,
     metrics: Dict[str, Any],
     *,
     json_name: str = "metrics.json",
-    yaml_name: str = "metrics.yaml",
+    yaml_name: Optional[str] = None,
 ) -> None:
     _os.makedirs(log_dir, exist_ok=True)
     json_path = _os.path.join(log_dir, json_name)
     with open(json_path, "w", encoding="utf-8") as f:
         _json.dump(metrics, f, ensure_ascii=False, indent=2)
-
-    try:
-        import yaml  # type: ignore
-
-        yaml_path = _os.path.join(log_dir, yaml_name)
-        with open(yaml_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(metrics, f, allow_unicode=True, sort_keys=False)
-    except Exception:
-        pass

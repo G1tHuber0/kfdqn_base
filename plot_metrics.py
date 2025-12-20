@@ -1,20 +1,19 @@
 """
-从各算法的最新运行目录读取 metrics.json，生成对比图：
+从各算法的所有运行目录读取 metrics.json，按 seed+timestamp 分组生成对比图：
 - total_return（横向柱状图）
 - episodes_to_cumulative_target（横向柱状图）
 - avg_reward_50_mad_to_success_threshold（横向柱状图）
 - reward_bins（按 ratio 的饼图，每个算法一张）
-输出目录：results/summary_<timestamp>/。
+输出目录：results/Summary/<seed+timestamp>/。
 """
 
 from __future__ import annotations
 
 import json
 import math
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,48 +33,67 @@ BAR_COLORS = {
 }
 
 
-def _find_latest_metrics(algo_dir: Path) -> Optional[Tuple[Path, Dict]]:
-    if not algo_dir.exists() or not algo_dir.is_dir():
+def _parse_timestamp_from_name(name: str) -> Optional[datetime]:
+    parts = name.split("_")
+    if len(parts) < 2:
         return None
-    # 子目录命名形如 Algo_YYYYMMDD_HHMM
-    subdirs = sorted([p for p in algo_dir.iterdir() if p.is_dir()], key=lambda p: p.name)
-    for sub in reversed(subdirs):
-        metrics_path = sub / "metrics.json"
-        if metrics_path.exists():
-            try:
-                with open(metrics_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                return sub, data
-            except Exception:
-                continue
-    return None
+    date_part = parts[-2]
+    time_part = parts[-1]
+    if not (date_part.isdigit() and time_part.isdigit()):
+        return None
+    if len(date_part) != 8 or len(time_part) not in (4, 6):
+        return None
+    fmt = "%Y%m%d_%H%M" if len(time_part) == 4 else "%Y%m%d_%H%M%S"
+    try:
+        return datetime.strptime(f"{date_part}_{time_part}", fmt)
+    except ValueError:
+        return None
 
 
 def _extract_suffix(dir_path: Path) -> Optional[str]:
     name = dir_path.name
     parts = name.split("_")
+    if len(parts) >= 3 and parts[-3].startswith("seed"):
+        return "_".join(parts[-3:])
     if len(parts) >= 2:
         return "_".join(parts[-2:])
     return name or None
 
 
-def _collect_latest_metrics() -> Tuple[Dict[str, Dict], Optional[str]]:
-    algos: Dict[str, Dict] = {}
-    suffixes: List[str] = []
+def _collect_all_metrics() -> Dict[str, Dict[str, Dict]]:
+    all_metrics: Dict[str, Dict[str, Dict]] = {}
     if not BASE_RESULTS.exists():
-        return algos, None
+        return all_metrics
     for algo in ALGO_ORDER:
         algo_dir = BASE_RESULTS / algo
-        latest = _find_latest_metrics(algo_dir)
-        if latest is None:
+        if not algo_dir.exists() or not algo_dir.is_dir():
             continue
-        subdir, data = latest
-        algos[algo] = data
-        suf = _extract_suffix(subdir)
-        if suf:
-            suffixes.append(suf)
-    summary_suffix = max(suffixes) if suffixes else None
-    return algos, summary_suffix
+        for sub in algo_dir.iterdir():
+            if not sub.is_dir():
+                continue
+            metrics_path = sub / "metrics.json"
+            if not metrics_path.exists():
+                continue
+            try:
+                with open(metrics_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                continue
+            suf = _extract_suffix(sub)
+            if not suf:
+                continue
+            all_metrics.setdefault(suf, {})[algo] = data
+    return all_metrics
+
+
+def _sorted_suffixes(suffixes: List[str]) -> List[str]:
+    def sort_key(suf: str):
+        ts = _parse_timestamp_from_name(suf)
+        if ts is not None:
+            return (0, ts)
+        return (1, suf)
+
+    return sorted(suffixes, key=sort_key)
 
 
 def _barh_plot(
@@ -173,41 +191,50 @@ def _combined_pie(output: Path, metrics: Dict[str, Dict]):
 
 
 def main() -> int:
-    metrics_map, suffix = _collect_latest_metrics()
-    if not metrics_map:
+    all_metrics = _collect_all_metrics()
+    if not all_metrics:
         print("未找到 metrics.json，请先运行训练脚本生成指标。")
         return 1
 
-    if suffix is None:
-        suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = BASE_RESULTS / f"summary_{suffix}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    output_dirs: List[Path] = []
+    for suffix in _sorted_suffixes(list(all_metrics.keys())):
+        metrics_map = all_metrics[suffix]
+        if not metrics_map:
+            continue
+        out_dir = BASE_RESULTS / "Summary" / suffix
+        out_dir.mkdir(parents=True, exist_ok=True)
 
-    _barh_plot(
-        out_dir / "total_return.png",
-        "Total Return",
-        metrics_map,
-        "total_return",
-        "Total Return",
-    )
-    _barh_plot(
-        out_dir / "episodes_to_cumulative_target.png",
-        "Episodes to Reach Cumulative 50,000",
-        metrics_map,
-        "episodes_to_cumulative_target",
-        "Episodes",
-    )
-    _barh_plot(
-        out_dir / "avg_reward_50_mad_to_success_threshold.png",
-        "MAD to 200 (50-episode avg)",
-        metrics_map,
-        "avg_reward_50_mad_to_success_threshold",
-        "MAD",
-    )
+        _barh_plot(
+            out_dir / "total_return.png",
+            "Total Return",
+            metrics_map,
+            "total_return",
+            "Total Return",
+        )
+        _barh_plot(
+            out_dir / "episodes_to_cumulative_target.png",
+            "Episodes to Reach Cumulative 50,000",
+            metrics_map,
+            "episodes_to_cumulative_target",
+            "Episodes",
+        )
+        _barh_plot(
+            out_dir / "avg_reward_50_mad_to_success_threshold.png",
+            "MAD to 200 (50-episode avg)",
+            metrics_map,
+            "avg_reward_50_mad_to_success_threshold",
+            "MAD",
+        )
 
-    _combined_pie(out_dir / "reward_bins_combined.png", metrics_map)
+        _combined_pie(out_dir / "reward_bins_combined.png", metrics_map)
+        output_dirs.append(out_dir)
 
-    print(f"图像已保存至: {out_dir}")
+    if not output_dirs:
+        print("未找到可用的 metrics.json，请检查结果目录。")
+        return 1
+
+    last_dir = output_dirs[-1]
+    print(f"图像已保存至: {last_dir} 等目录")
     return 0
 
 

@@ -10,7 +10,12 @@ class Config:
         # --- 1. 环境与基础设置 ---
         self.algo = algo
         self.env_name = env_name
-        self.seed = 2
+        # 默认随机种子可通过环境变量 TRAIN_SEED 覆盖（兼容单脚本运行与 run_all 批量运行）
+        default_seed = 42
+        try:
+            self.seed = int(os.environ.get("TRAIN_SEED", str(default_seed)))
+        except Exception:
+            self.seed = default_seed
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # --- 2. 神经网络参数 ---
         self.state_dim = 4
@@ -64,6 +69,10 @@ class Config:
             self.lr_critic = 0.002
         # Group D: KFDQN (Knowledge Guided)
         elif self.algo == 'KFDQN':
+
+            self.use_hybrid_action = True
+            self.use_hybrid_learning = True
+
             self.buffer_size = 10000
             self.minimal_size = 500
             self.batch_size = 64
@@ -80,13 +89,13 @@ class Config:
             self.h1 = 0.1
             self.h2 = 0.08
             # 监督阶段长度（论文描述常用 50 episodes）
-            self.ep_r = 0
+            self.ep_r = 50
             # Algorithm 2: 每隔 C 回合同步一次 targetQ 和 kf_theta
             self.C_update = 10
             # Eq.(34): m = 0.35 + 0.6 * exp(-i)
             self.m_base = 0.35
             self.m_decay = 0.6
-            self.m_tau = 1  # 严格复现：不使用 /m_tau
+            self.m_tau = 100  # 严格复现：不使用 /m_tau
             # =========================
             # Fuzzy 学习率与动作强度（工程上常设小一些更稳）
             # =========================

@@ -1,12 +1,9 @@
 import gymnasium as gym
-import numpy as np
-import random
 import time
 import datetime
 import os
 import argparse
 import matplotlib.pyplot as plt
-import torch
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -15,6 +12,7 @@ from utils.replay_buffer import ReplayBuffer
 from agents.kfdqn_agent import KFDQNAgent
 from utils.run_artifacts import save_run_config, save_metrics
 from utils.metrics import compute_training_metrics
+from utils.seeding import episode_seed, seed_everything
 import warnings
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*CartPole-v0.*")
@@ -43,7 +41,7 @@ def parse_args():
     parser.add_argument(
         "--variant",
         choices=["full", "no_hya", "no_hyl", "none"],
-        default="none",
+        default="no_hya",
         help="full: 原始KFDQN; no_hya: 去除混合动作策略; no_hyl: 去除混合学习策略",
     )
     return parser.parse_args()
@@ -93,14 +91,7 @@ def main():
     base_seed = cfg.seed
     env = make_env(cfg.env_name, x_threshold=X_THRESHOLD)
 
-    np.random.seed(base_seed)
-    random.seed(base_seed)
-    torch.manual_seed(base_seed)
-    try:
-        env.action_space.seed(base_seed)
-        env.observation_space.seed(base_seed)
-    except Exception:
-        pass
+    seed_everything(base_seed, env=env)
 
     agent = KFDQNAgent(cfg)
     buffer = ReplayBuffer(cfg.buffer_size)
@@ -114,7 +105,7 @@ def main():
     with tqdm(total=cfg.episodes, desc=f"KFDQN-{variant_tag}", unit="ep", dynamic_ncols=True, colour='red', position=tqdm_position, leave=True) as pbar:
         for ep in range(cfg.episodes):
             agent.update_parameters(ep)
-            state, _ = env.reset(seed=base_seed + ep)
+            state, _ = env.reset(seed=episode_seed(base_seed, ep))
 
             done = False
             ep_return = 0.0
@@ -151,11 +142,9 @@ def main():
                     ep_q_loss += losses["q_loss"]
                     ep_fuzzy_loss += losses["fuzzy_loss"]
                     updates += 1
-            print(f"Episode {ep+1}: a_f count = {count_af}, hya count = {count_hya}")
             return_list.append(ep_return)
             avg_q_loss = ep_q_loss / max(1, updates)
             avg_fuzzy_loss = ep_fuzzy_loss / max(1, updates)
-
             writer.add_scalar("Train/01_Episode_Reward", ep_return, ep)
             writer.add_scalar("Train/02_Epsilon", agent.epsilon, ep)
             writer.add_scalar("Train/03_Q_Loss", avg_q_loss, ep)
@@ -182,7 +171,7 @@ def main():
     plt.xlabel('Episodes')
     plt.ylabel('Return')
     plt.xlim(0, 500)
-    plt.ylim(0, 200)
+    plt.ylim(0, 205)
     plt.yticks([0, 50, 100, 150, 200])
     plt.legend()
     plt.grid(True, alpha=0.3)

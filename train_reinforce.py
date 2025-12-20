@@ -1,7 +1,4 @@
 import gymnasium as gym
-import torch
-import numpy as np
-import random
 import matplotlib.pyplot as plt
 import os
 import datetime
@@ -12,6 +9,7 @@ from config import Config
 from agents.reinforce_agent import ReinforceAgent
 from utils.run_artifacts import save_run_config, save_metrics
 from utils.metrics import compute_training_metrics
+from utils.seeding import episode_seed, seed_everything
 import warnings
 
 # 屏蔽 CartPole-v0 的弃用警告
@@ -65,14 +63,7 @@ def train_reinforce():
     base_seed = cfg.seed
     env = make_env(cfg.env_name, x_threshold=X_THRESHOLD)
 
-    random.seed(base_seed)
-    np.random.seed(base_seed)
-    torch.manual_seed(base_seed)
-    try:
-        env.action_space.seed(base_seed)
-        env.observation_space.seed(base_seed)
-    except Exception:
-        pass
+    seed_everything(base_seed, env=env)
     
     agent = ReinforceAgent(cfg)
     return_list = []
@@ -85,7 +76,7 @@ def train_reinforce():
     with tqdm(total=cfg.episodes, desc="Reinforce", unit="ep", dynamic_ncols=True, colour='blue', position=tqdm_position, leave=True) as pbar:      
         for i in range(cfg.episodes):
             agent.update_epsilon(i)
-            state, _ = env.reset(seed=base_seed + i)
+            state, _ = env.reset(seed=episode_seed(base_seed, i))
             
             done = False
             episode_return = 0
@@ -151,8 +142,9 @@ def train_reinforce():
     plt.xlabel('Episodes')
     plt.ylabel('Return')
     plt.xlim(0, 500)
-    plt.ylim(0, 200)
+    plt.ylim(0, 205)
     plt.yticks([0, 50, 100, 150, 200])
+    plt.grid(True, alpha=0.3)
     plt.savefig(os.path.join(log_dir, 'reinforce_result.png'))
     log_line(f"训练结束，结果已保存至 {log_dir}\n")
 
