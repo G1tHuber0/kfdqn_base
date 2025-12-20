@@ -10,17 +10,26 @@ class Config:
         # --- 1. 环境与基础设置 ---
         self.algo = algo
         self.env_name = env_name
+        # --- 自动适配环境参数 ---
+        if "CartPole" in self.env_name:
+            self.state_dim = 4
+            self.action_dim = 2
+            self.hidden_dim = 128
+        elif "MountainCar" in self.env_name:
+            self.state_dim = 2
+            self.action_dim = 3
+            self.hidden_dim = 128
+        else:
+            self.state_dim = 4
+            self.action_dim = 2
+            self.hidden_dim = 128
         # 默认随机种子可通过环境变量 TRAIN_SEED 覆盖（兼容单脚本运行与 run_all 批量运行）
-        default_seed = 42
+        default_seed = 2
         try:
             self.seed = int(os.environ.get("TRAIN_SEED", str(default_seed)))
         except Exception:
             self.seed = default_seed
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # --- 2. 神经网络参数 ---
-        self.state_dim = 4
-        self.hidden_dim = 128      
-        self.action_dim = 2     
         # --- 3. 训练通用参数 ---
         self.gamma = 0.98       
         self.episodes = 500     
@@ -101,3 +110,9 @@ class Config:
             # =========================
             self.freeze_fuzzy_premise = True
             self.fuzzy_lr = 0.002
+            if "MountainCar" in self.env_name:
+                self.h1 = 0.4
+                self.h2 = 0.6
+                self.ep_r = 50
+                self.m_base = 0.8
+                self.m_decay = 0.2

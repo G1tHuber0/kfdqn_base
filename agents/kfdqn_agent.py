@@ -31,8 +31,8 @@ class KFDQNAgent:
         self.target_q_net.load_state_dict(self.q_net.state_dict())
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=cfg.lr)
         # --- 模糊系统初始化 ---
-        self.fuzzy_guide = FuzzySystem(self.device).to(self.device)# kf_theta: 指导模糊系统
-        self.fuzzy_learn = FuzzySystem(self.device).to(self.device)# kf_theta_minus: 学习模糊系统 
+        self.fuzzy_guide = FuzzySystem(self.device, env_name=cfg.env_name).to(self.device)# kf_theta: 指导模糊系统
+        self.fuzzy_learn = FuzzySystem(self.device, env_name=cfg.env_name).to(self.device)# kf_theta_minus: 学习模糊系统 
         # # 初始化时，让学习网络与指导网络参数同步
         self.fuzzy_learn.load_state_dict(self.fuzzy_guide.state_dict())
         with torch.no_grad():
