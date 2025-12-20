@@ -1,11 +1,17 @@
-
-import gymnasium as gym
-import time
 import datetime
 import os
+import sys
+import time
+from pathlib import Path
+
+import gymnasium as gym
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from config import Config
 from utils.replay_buffer import ReplayBuffer
@@ -46,11 +52,11 @@ def train_kfdqn():
     log_line(f"\n{'='*60}")
     log_line(f"开始训练 KFDQN | 环境: {cfg.env_name} | 设备: {cfg.device}")
     log_line(f"{'='*60}")
-    log_line("查看训练过程数据，请终端运行: tensorboard --logdir=results")
+    log_line("查看训练过程数据，请终端运行: tensorboard --logdir=results_cartpole")
     log_line(f"{'='*60}\n")
     # --- TensorBoard 配置 ---
     curr_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    log_dir = os.path.join("results/KFDQN", f"KFDQN_{curr_time}")
+    log_dir = os.path.join("results_cartpole/KFDQN", f"KFDQN_{curr_time}")
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     save_run_config(

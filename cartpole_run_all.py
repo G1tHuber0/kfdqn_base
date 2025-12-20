@@ -14,12 +14,12 @@ from typing import Dict, List
 
 # 可按需调整执行清单
 TRAIN_SCRIPTS = [
-    "train_dqn.py",
-    "train_double_dqn.py",
-    "train_dueling_dqn.py",
-    "train_reinforce.py",
-    "train_ac.py",
-    "train_kfdqn.py",
+    "train_cartpole/train_dqn.py",
+    "train_cartpole/train_double_dqn.py",
+    "train_cartpole/train_dueling_dqn.py",
+    "train_cartpole/train_reinforce.py",
+    "train_cartpole/train_ac.py",
+    "train_cartpole/train_kfdqn.py",
 ]
 
 # 说明：

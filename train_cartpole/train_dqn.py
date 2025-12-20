@@ -1,12 +1,21 @@
+import datetime
+import os
+import sys
+import time
+from pathlib import Path
+
 import gymnasium as gym
 import matplotlib.pyplot as plt
-import os
-import datetime
-import time 
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from config import Config
-from agents.reinforce_agent import ReinforceAgent
+from utils.replay_buffer import ReplayBuffer
+from agents.dqn_agent import DQNAgent
 from utils.run_artifacts import save_run_config, save_metrics
 from utils.metrics import compute_training_metrics
 from utils.seeding import episode_seed, seed_everything
@@ -14,8 +23,6 @@ import warnings
 
 # 屏蔽 CartPole-v0 的弃用警告
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*CartPole-v0.*")
-
-X_THRESHOLD = 2.4
 
 SILENT = os.environ.get("TRAIN_SILENT", "0") == "1"
 
@@ -28,104 +35,89 @@ def log_tqdm(msg: str):
         tqdm.write(msg)
 
 
-def make_env(env_name: str = "CartPole-v0", *, x_threshold: float = X_THRESHOLD):
+def make_env(env_name: str = "CartPole-v0"):
     env = gym.make(env_name)
-    env.unwrapped.x_threshold = x_threshold
+    env.unwrapped.x_threshold = 2.4  # default is 2.4
     return env
 
 
-def train_reinforce():
-    cfg = Config(algo='Reinforce')
-    
+def train_dqn():
+    cfg = Config(algo='DQN')
     # --- TensorBoard 配置 ---
     curr_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    log_dir = os.path.join("results/Reinforce", f"Reinforce_{curr_time}")
+    log_dir = os.path.join("results_cartpole/DQN", f"DQN_{curr_time}")
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    save_run_config(
-        log_dir,
-        cfg,
-        extra={
-            "env_overrides": {
-                "x_threshold": X_THRESHOLD,
-            }
-        },
-    )
+    save_run_config(log_dir, cfg)
     writer = SummaryWriter(log_dir=log_dir)
     
-    # 2. 准备 TensorBoard 和 日志路径
     log_line(f"\n{'='*60}")
-    log_line(f"开始训练 REINFORCE | 环境: {cfg.env_name} | 设备: {cfg.device}")
-    log_line(f"{'='*60}")
-    log_line("查看训练过程数据，请终端运行: tensorboard --logdir=results")
+    log_line(f"开始训练 DQN | 环境: {cfg.env_name} | 设备: {cfg.device}")
+    log_line(f"TensorBoard: {log_dir}")
     log_line(f"{'='*60}\n")
     
     base_seed = cfg.seed
-    env = make_env(cfg.env_name, x_threshold=X_THRESHOLD)
-
+    env = make_env(cfg.env_name)
+    # 统一随机种子：全局库 + 环境/动作空间
     seed_everything(base_seed, env=env)
     
-    agent = ReinforceAgent(cfg)
+    agent = DQNAgent(cfg)
+    buffer = ReplayBuffer(cfg.buffer_size)
     return_list = []
-    
-    total_steps = 0 
-    last_log_total_steps = 0    
-    current_sps = 0             
 
+    total_steps = 0  # 全局总步数
+
+    # 使用 tqdm 接管循环
     tqdm_position = int(os.environ.get("TQDM_POSITION", "0"))
-    with tqdm(total=cfg.episodes, desc="Reinforce", unit="ep", dynamic_ncols=True, colour='blue', position=tqdm_position, leave=True) as pbar:      
+    with tqdm(total=cfg.episodes, desc="DQN", unit="ep", dynamic_ncols=True, colour='green', position=tqdm_position, leave=True) as pbar:      
         for i in range(cfg.episodes):
             agent.update_epsilon(i)
             state, _ = env.reset(seed=episode_seed(base_seed, i))
             
             done = False
             episode_return = 0
-            episode_steps = 0 
-            
-            # [Reinforce 特有] 收集一整条轨迹
-            transition_dict = {
-                'states': [], 'actions': [], 'next_states': [], 'rewards': [], 'dones': []
-            }
+            episode_loss = 0  
+            update_count = 0  
+            episode_steps = 0 # 记录本回合步数
             
             while not done:
                 action = agent.take_action(state)
                 next_state, reward, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
-                
-                transition_dict['states'].append(state)
-                transition_dict['actions'].append(action)
-                transition_dict['next_states'].append(next_state)
-                transition_dict['rewards'].append(reward)
-                transition_dict['dones'].append(done)
-                
+                buffer.add(state, action, reward, next_state, done)
                 state = next_state
                 episode_return += reward
                 total_steps += 1
                 episode_steps += 1
+                if buffer.size() > cfg.minimal_size:
+                    b_s, b_a, b_r, b_ns, b_d = buffer.sample(cfg.batch_size)
+                    transition_dict = {
+                        'states': b_s, 'actions': b_a, 'next_states': b_ns, 
+                        'rewards': b_r, 'dones': b_d
+                    }
+                    loss = agent.update(transition_dict) 
+                    if loss is not None:
+                        episode_loss += loss
+                        update_count += 1
                 
-            # [Reinforce 特有] 回合结束后更新一次
-            loss = agent.update(transition_dict) 
-            
             # --- 数据记录 ---
             return_list.append(episode_return)
-            
-            # --- TensorBoard ---
+            avg_loss = episode_loss / update_count if update_count > 0 else 0
+            # --- TensorBoard  ---
             writer.add_scalar("Train/01_Episode_Reward", episode_return, i)
             writer.add_scalar("Train/02_Epsilon", agent.epsilon, i)
-            writer.add_scalar("Train/03_Avg_Loss", loss, i)
+            writer.add_scalar("Train/03_Avg_Loss", avg_loss, i)
 
-            # --- 屏幕打印 ---
+            # --- 屏幕打印日志 ---
             if (i + 1) % 10 == 0:
-                steps_diff = total_steps - last_log_total_steps
-                last_log_total_steps = total_steps
-
                 log_msg = (
                     f"Ep: {i+1}/{cfg.episodes} | "
                     f"Steps: {episode_steps} | " 
-                    f"Loss: {loss:.3f}"
+                    f"Epsilon: {agent.epsilon:.3f} | "
+                    f"Loss: {avg_loss:.3f}"
                 )
                 log_tqdm(log_msg)
-
+            # 更新进度条后缀 ---
             pbar.set_postfix({
                 'total_steps': f"{total_steps}" 
             })
@@ -137,16 +129,17 @@ def train_reinforce():
     writer.close()
     
     plt.figure()
-    plt.plot(return_list, color="#034fc2")
-    plt.title('REINFORCE (CartPole-v0)')
+    plt.figure(figsize=(10, 6))
+    plt.plot(return_list, color='#003f5c') 
+    plt.title('DQN Baseline (CartPole-v0)')
     plt.xlabel('Episodes')
     plt.ylabel('Return')
     plt.xlim(0, 500)
     plt.ylim(0, 205)
     plt.yticks([0, 50, 100, 150, 200])
     plt.grid(True, alpha=0.3)
-    plt.savefig(os.path.join(log_dir, 'reinforce_result.png'))
+    plt.savefig(os.path.join(log_dir, 'dqn_baseline_result.png'))
     log_line(f"训练结束，结果已保存至 {log_dir}\n")
 
 if __name__ == '__main__':
-    train_reinforce()
+    train_dqn()

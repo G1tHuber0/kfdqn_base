@@ -4,7 +4,7 @@
 - episodes_to_cumulative_target（横向柱状图）
 - avg_reward_50_mad_to_success_threshold（横向柱状图）
 - reward_bins（按 ratio 的饼图，每个算法一张）
-输出目录：results/Summary/<seed+timestamp>/。
+输出目录：results_cartpole/Summary/<seed+timestamp>/。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-BASE_RESULTS = Path("results")
+BASE_RESULTS = Path("results_cartpole")
 # 固定算法顺序
 ALGO_ORDER = ["DQN", "DoubleDQN", "DuelingDQN", "Reinforce", "AC", "KFDQN"]
 # 柱状图颜色
@@ -31,6 +31,22 @@ BAR_COLORS = {
     "AC": "#1b9e77",           # 绿
     "KFDQN": "#66c2ff",        # 浅蓝
 }
+FIGSIZE_BAR = (9, 5)
+FIGSIZE_PIE = (12, 8)
+FIG_DPI = 120
+SAVE_DPI = 300
+
+plt.rcParams.update(
+    {
+        "figure.dpi": FIG_DPI,
+        "savefig.dpi": SAVE_DPI,
+        "font.size": 12,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "xtick.labelsize": 11,
+        "ytick.labelsize": 11,
+    }
+)
 
 
 def _parse_timestamp_from_name(name: str) -> Optional[datetime]:
@@ -125,7 +141,7 @@ def _barh_plot(
             vals.append(v)
 
     y_pos = np.arange(len(algos))
-    plt.figure(figsize=(8, 0.6 * len(algos) + 1))
+    plt.figure(figsize=FIGSIZE_BAR)
     colors = [BAR_COLORS.get(a, "skyblue") for a in algos]
     bars = plt.barh(y_pos, vals, color=colors, edgecolor="black", linewidth=1)
     plt.yticks(y_pos, algos)
@@ -135,7 +151,7 @@ def _barh_plot(
         offset = max(vals) * 0.01 if vals else 0.1
         plt.text(bar.get_width() + offset, bar.get_y() + bar.get_height() / 2, f"{val}", va="center", ha="left")
     plt.tight_layout()
-    plt.savefig(output)
+    plt.savefig(output, dpi=SAVE_DPI, bbox_inches="tight")
     plt.close()
 
 
@@ -146,7 +162,7 @@ def _combined_pie(output: Path, metrics: Dict[str, Dict]):
     n = len(algos)
     cols = min(3, n)
     rows = math.ceil(n / cols)
-    plt.figure(figsize=(5 * cols, 5 * rows))
+    plt.figure(figsize=FIGSIZE_PIE)
     colors = ["#390080", "#2ec4b6", "yellow"]  # <=100, (100,200), ==200
     legend_labels = ["<=100", "(100,200)", "==200"]
     for idx, algo in enumerate(algos):
@@ -186,7 +202,7 @@ def _combined_pie(output: Path, metrics: Dict[str, Dict]):
     ]
     plt.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, -0.05), ncol=len(colors))
     plt.tight_layout()
-    plt.savefig(output)
+    plt.savefig(output, dpi=SAVE_DPI, bbox_inches="tight")
     plt.close()
 
 

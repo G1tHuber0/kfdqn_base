@@ -1,11 +1,18 @@
-import gymnasium as gym
-import time
+import argparse
 import datetime
 import os
-import argparse
+import sys
+import time
+from pathlib import Path
+
+import gymnasium as gym
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from config import Config
 from utils.replay_buffer import ReplayBuffer
@@ -68,7 +75,7 @@ def main():
         variant_tag = "full"
 
     curr_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    log_dir = os.path.join("results/KFDQN_ablation", f"{variant_tag}_{curr_time}")
+    log_dir = os.path.join("results_cartpole/KFDQN_ablation", f"{variant_tag}_{curr_time}")
     os.makedirs(log_dir, exist_ok=True)
     save_run_config(
         log_dir,
