@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from pathlib import Path
-
+import csv  # 需要导入 csv 库
 import gymnasium as gym
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
@@ -45,7 +45,7 @@ def log_tqdm(msg: str):
 
 
 def make_env(env_name: str = ENV_NAME):
-    env = gym.make(env_name)
+    env = gym.make(env_name, render_mode=None)
     return env
 
 def train_kfdqn():
@@ -68,7 +68,7 @@ def train_kfdqn():
     writer = SummaryWriter(log_dir=log_dir)
 
     # 3. 环境与种子设置
-    base_seed = cfg.seed
+    base_seed = cfg.seed 
     env = make_env(cfg.env_name)
 
     seed_everything(base_seed, env=env)
@@ -163,6 +163,18 @@ def train_kfdqn():
                 'total_steps': f"{total_steps}"
             })
             pbar.update(1)
+
+    raw_data_path = os.path.join(log_dir, "raw_episode_returns.csv")
+    
+    with open(raw_data_path, "w", newline='') as f:
+        csv_writer = csv.writer(f)
+        # 写入表头 (可选，方便 Origin 识别列名)
+        csv_writer.writerow(["episode", "return"])
+        # 写入数据
+        for idx, val in enumerate(return_list):
+            csv_writer.writerow([idx + 1, val])
+            
+    log_line(f"原始回报数据已保存至 (CSV): {raw_data_path}")
 
     metrics = compute_training_metrics(
         return_list,

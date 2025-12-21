@@ -5,6 +5,11 @@
 - avg_reward_50_mad_to_success_threshold（横向柱状图）
 - reward_bins（按 ratio 的饼图，每个算法一张）
 输出目录：results_cartpole/Summary/<seed+timestamp>/。
+
+修改点：
+1. 移除 explode：解决扇形外缘不圆、裂缝过大的问题。
+2. 完美的正圆：通过 wedgeprops={'edgecolor': 'black'} 实现区域分隔。
+3. 保持文字描边和内部显示。
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as path_effects
 import numpy as np
 
 
@@ -42,6 +48,7 @@ plt.rcParams.update(
         "savefig.dpi": SAVE_DPI,
         "font.size": 12,
         "axes.titlesize": 14,
+        "axes.titleweight": "bold",
         "axes.labelsize": 12,
         "xtick.labelsize": 11,
         "ytick.labelsize": 11,
@@ -131,25 +138,55 @@ def _barh_plot(
     if not items:
         return
     algos, vals_raw = zip(*items)
+    
     vals = []
+    text_strs = []
+    
     for v in vals_raw:
         if key == "total_return":
-            vals.append(int(round(v)))
+            val_num = int(round(v))
+            vals.append(val_num)
+            text_strs.append(str(val_num))
         elif key == "avg_reward_50_mad_to_success_threshold" and v is not None:
-            vals.append(round(v, 4))
+            val_num = round(v, 4)
+            vals.append(val_num)
+            text_strs.append(f"{val_num:.4f}")
         else:
             vals.append(v)
+            text_strs.append(str(v))
 
     y_pos = np.arange(len(algos))
     plt.figure(figsize=FIGSIZE_BAR)
+    
     colors = [BAR_COLORS.get(a, "skyblue") for a in algos]
-    bars = plt.barh(y_pos, vals, color=colors, edgecolor="black", linewidth=1)
+    
+    ax = plt.gca()
+    bars = ax.barh(y_pos, vals, color=colors, edgecolor="black", linewidth=1, alpha=0.9)
+    
     plt.yticks(y_pos, algos)
     plt.xlabel(xlabel)
     plt.title(title)
-    for bar, val in zip(bars, vals):
-        offset = max(vals) * 0.01 if vals else 0.1
-        plt.text(bar.get_width() + offset, bar.get_y() + bar.get_height() / 2, f"{val}", va="center", ha="left")
+    
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.grid(axis='x', linestyle='--', alpha=0.6)
+
+    max_val = max(vals) if vals else 1.0
+    threshold = max_val * 0.15 
+
+    for bar, text_str in zip(bars, text_strs):
+        width = bar.get_width()
+        y_center = bar.get_y() + bar.get_height() / 2
+        
+        if width > threshold:
+            txt = plt.text(width - (max_val * 0.01), y_center, text_str, 
+                           va="center", ha="right", color="white", fontweight="bold")
+            txt.set_path_effects([path_effects.withStroke(linewidth=2, foreground='black')])
+        else:
+            txt = plt.text(width + (max_val * 0.01), y_center, text_str, 
+                           va="center", ha="left", color="black", fontweight="bold")
+            txt.set_path_effects([path_effects.withStroke(linewidth=2, foreground='white')])
+            
     plt.tight_layout()
     plt.savefig(output, dpi=SAVE_DPI, bbox_inches="tight")
     plt.close()
@@ -162,48 +199,66 @@ def _combined_pie(output: Path, metrics: Dict[str, Dict]):
     n = len(algos)
     cols = min(3, n)
     rows = math.ceil(n / cols)
-    plt.figure(figsize=FIGSIZE_PIE)
+    
+    fig, axes = plt.subplots(rows, cols, figsize=FIGSIZE_PIE)
+    if n == 1:
+        axes_flat = [axes]
+    else:
+        axes_flat = np.array(axes).reshape(-1)
+        
     colors = ["#390080", "#2ec4b6", "yellow"]  # <=100, (100,200), ==200
     legend_labels = ["<=100", "(100,200)", "==200"]
-    for idx, algo in enumerate(algos):
+    
+    idx = 0
+    for algo in algos:
         bins = metrics[algo].get("reward_bins", [])
+        ax = axes_flat[idx]
+        
         if not bins:
+            ax.axis('off')
+            idx += 1
             continue
+            
         labels = ["", "", ""]
         ratios = [b.get("ratio", 0.0) for b in bins]
+        
         if all(r == 0 for r in ratios):
+            ax.axis('off')
+            idx += 1
             continue
-        ax = plt.subplot(rows, cols, idx + 1)
+        
+        # --- 修正区域：移除 explode，回归完美的圆 ---
         wedges, texts, autotexts = ax.pie(
             ratios,
             labels=labels,
-            autopct="%1.1f%%",
+            autopct=lambda p: f'{p:.1f}%' if p > 0.0 else '', 
+            pctdistance=0.6, 
             startangle=90,
             colors=colors,
             counterclock=True,
-            wedgeprops={"edgecolor": "black", "linewidth": 1},
-            textprops={"fontsize": 12},
+            # 关键：linewidth=1.2 创建清晰的黑色分隔线，edgecolor='black' 满足黑色描边需求
+            wedgeprops={"edgecolor": "black", "linewidth": 1.2, "antialiased": True}, 
+            textprops={"fontsize": 11, "weight": "bold", "color": "white"},
         )
+        
         for t in autotexts:
-            t.set_fontsize(12)
-            t.set_color("black")
-        # 调整百分比位置，使不相邻太近
-        for w, t in zip(wedges, autotexts):
-            ang = (w.theta2 + w.theta1) / 2.0
-            x = math.cos(math.radians(ang))
-            y = math.sin(math.radians(ang))
-            # 稍微外移
-            t.set_position((1.2 * x, 1.2 * y))
-        ax.set_title(f"{algo} reward_bins (ratio)")
-    # 统一图例
+            t.set_path_effects([path_effects.withStroke(linewidth=2, foreground='black')])
+            
+        ax.set_title(f"{algo}", fontweight="bold")
+        idx += 1
+        
+    for ax in axes_flat[idx:]:
+        ax.axis("off")
+        
     handles = [
         plt.Rectangle((0, 0), 1, 1, color=colors[i], ec="black", lw=1, label=legend_labels[i])
         for i in range(len(colors))
     ]
-    plt.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, -0.05), ncol=len(colors))
-    plt.tight_layout()
+    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.02), ncol=len(colors), frameon=False)
+    
+    plt.tight_layout(rect=[0, 0.05, 1, 1])
     plt.savefig(output, dpi=SAVE_DPI, bbox_inches="tight")
-    plt.close()
+    plt.close(fig)
 
 
 def main() -> int:
@@ -219,6 +274,7 @@ def main() -> int:
             continue
         out_dir = BASE_RESULTS / "Summary" / suffix
         out_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Generating charts for: {suffix}")
 
         _barh_plot(
             out_dir / "total_return.png",

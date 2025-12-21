@@ -53,14 +53,14 @@ class MountainCarFuzzyConfig:
     # Position (2 sets): [Left Side, Right Side]
     # 论文 Fig 15 暗示左侧中心偏左(-1.0)，右侧中心偏右(0.5)，以谷底-0.5为界
     ANTECEDENT_CENTERS = [
-        [-1.0, 0.5],       # Position centers
-        [-0.05, 0.0, 0.05] # Velocity centers: [Left(Neg), Stop(0), Right(Pos)]
+        [-1.0, 0],       # Position centers
+        [-0.04, 0.0, 0.04] # Velocity centers: [Left(Neg), Stop(0), Right(Pos)]
     ]
     
     # 模糊集宽度 (Sigmas)
     ANTECEDENT_SIGMAS = [
         [0.5, 0.5],        # Position sigma
-        [0.02, 0.01, 0.02] # Velocity sigma (中间的 Stop 窄一点)
+        [0.02, 0.02, 0.02] # Velocity sigma (中间的 Stop 窄一点)
     ]
 
     # ==========================================
@@ -69,8 +69,8 @@ class MountainCarFuzzyConfig:
     # 动作: 0=Left, 1=None, 2=Right
     # 论文 Fig 16 动作模糊集中心为 -1, 0, 1
     # 考虑到 Softmax，建议放大这些值以增强引导
-    ACTION_SUPPORT = 5.0   # 强力推荐 (对应 1.0)
-    ACTION_OPPOSE = -5.0   # 强力抑制 (对应 -1.0)
+    ACTION_SUPPORT = 1.0   # 强力推荐 (对应 1.0)
+    ACTION_OPPOSE = -1.0   # 强力抑制 (对应 -1.0)
 
     # 预处理截断
     POS_LIMIT = 1.2
@@ -106,7 +106,7 @@ class FuzzySystem(nn.Module):
         # 将 Gym 微小的数值放大，使其能落在模糊集的有效区间内
         if self.is_mountaincar:
             # Velocity range ~0.07, need scale up to match sigma ~0.02 distribution
-            self.scales = torch.tensor([1.0, 10.0], device=device)
+            self.scales = torch.tensor([1.0, 1.0], device=device)
         else:
             self.scales = torch.tensor([1.0, 1.0, 2.4, 1/3], device=device)
         

@@ -24,7 +24,7 @@ class Config:
             self.action_dim = 2
             self.hidden_dim = 128
         # 默认随机种子可通过环境变量 TRAIN_SEED 覆盖（兼容单脚本运行与 run_all 批量运行）
-        default_seed = 2
+        default_seed = 432
         try:
             self.seed = int(os.environ.get("TRAIN_SEED", str(default_seed)))
         except Exception:
@@ -100,7 +100,7 @@ class Config:
             # 监督阶段长度（论文描述常用 50 episodes）
             self.ep_r = 50
             # Algorithm 2: 每隔 C 回合同步一次 targetQ 和 kf_theta
-            self.C_update = 10
+            self.C_update = 25
             # Eq.(34): m = 0.35 + 0.6 * exp(-i)
             self.m_base = 0.35
             self.m_decay = 0.6
@@ -109,7 +109,7 @@ class Config:
             # Fuzzy 学习率与动作强度（工程上常设小一些更稳）
             # =========================
             self.freeze_fuzzy_premise = True
-            self.fuzzy_lr = 0.002
+            self.fuzzy_lr = 0.02
             if "MountainCar" in self.env_name:
                 self.h1 = 0.4
                 self.h2 = 0.6

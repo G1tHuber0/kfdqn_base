@@ -91,8 +91,6 @@ class KFDQNAgent:
         self.n = 1.0 - self.m
         # 算法 2: 每隔 C 回合更新一次 Target 网络
         C = getattr(self.cfg, "C_update", 10)
-        if episode_idx == self.cfg.ep_r:
-            self._hard_update_targets()
         if episode_idx > 0 and (episode_idx % C == 0):
             self._hard_update_targets()
 
@@ -114,20 +112,24 @@ class KFDQNAgent:
             fuzzy_logits = self.fuzzy_guide(state)
             # 模糊系统的推荐动作
             a_f = int(fuzzy_logits.argmax(dim=1).item())
-            if (np.random.rand() < self.epsilon) or (episode_idx < self.cfg.ep_r):
-                return a_f,'a_f',None
             
-            # 1. 先把两者都变成标准正态分布 (Mean=0, Std=1)
-            q_norm = self.standardize(q_values)
-            f_norm = self.standardize(fuzzy_logits)
+            if (np.random.rand() < self.epsilon) or (episode_idx < self.cfg.ep_r):
+                return a_f, 'a_f', None
+            # 1. 不进行标准正态分布 (Mean=0, Std=1)
+            q_norm = q_values 
+            f_norm = fuzzy_logits
+
+            # q_norm = self.standardize(q_values)
+            # f_norm = self.standardize(fuzzy_logits)
             # 2. 然后再过 Softmax 
             q_score = F.softmax(q_norm, dim=1)
             f_score = F.softmax(f_norm, dim=1)
 
             hybrid_score = self.cfg.h1 * f_score + self.cfg.h2 * q_score
-            hya=int(hybrid_score.argmax(dim=1).item())
-            a_q= int(q_values.argmax(dim=1).item())
-            return hya,'hya',a_q
+            hya = int(hybrid_score.argmax(dim=1).item())
+            a_q = int(q_values.argmax(dim=1).item())
+            
+            return hya, 'hya', a_q
         else:
             # 如果关闭混合动作策略，退化为 epsilon-greedy on Q
             if np.random.rand() < self.epsilon:
@@ -189,9 +191,9 @@ class KFDQNAgent:
         self.optimizer.step()
 
         
-        if self.update_steps % self.cfg.target_update == 0:
-            self.target_q_net.load_state_dict(self.q_net.state_dict())
-        self.update_steps += 1
+        # if self.update_steps % self.cfg.target_update == 0:
+        #     self.target_q_net.load_state_dict(self.q_net.state_dict())
+        # self.update_steps += 1
 
         # ========= 第二部分: 知识更新 (公式 13) =========
         if self.use_hybrid_learning:

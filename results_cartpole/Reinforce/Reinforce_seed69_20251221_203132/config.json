@@ -1,0 +1,40 @@
+{
+  "timestamp": "2025-12-21T20:34:22",
+  "run": {
+    "script": "train_reinforce.py",
+    "argv": []
+  },
+  "system": {
+    "python": "3.10.19",
+    "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.31"
+  },
+  "config": {
+    "algo": "Reinforce",
+    "env_name": "CartPole-v0",
+    "state_dim": 4,
+    "action_dim": 2,
+    "hidden_dim": 128,
+    "seed": 69,
+    "device": "cuda",
+    "gamma": 0.98,
+    "episodes": 500,
+    "lr": 0.002,
+    "epsilon_start": null,
+    "epsilon_end": 0.01,
+    "decay_start": 0,
+    "decay_steps": 0,
+    "grad_clip_norm": null,
+    "h1": null,
+    "h2": null,
+    "m_base": null,
+    "buffer_size": null,
+    "minimal_size": null,
+    "batch_size": null,
+    "target_update": null
+  },
+  "extra": {
+    "env_overrides": {
+      "x_threshold": 2.4
+    }
+  }
+}

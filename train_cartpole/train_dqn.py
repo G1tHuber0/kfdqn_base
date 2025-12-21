@@ -8,6 +8,7 @@ import gymnasium as gym
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import csv
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -122,6 +123,15 @@ def train_dqn():
                 'total_steps': f"{total_steps}" 
             })
             pbar.update(1)
+
+    raw_data_path = os.path.join(log_dir, "raw_episode_returns.csv")
+    with open(raw_data_path, "w", newline="") as f:
+        writer_csv = csv.writer(f)
+        writer_csv.writerow(["episode", "return"])
+        for idx, val in enumerate(return_list, start=1):
+            writer_csv.writerow([idx, val])
+    log_line(f"原始回报数据已保存至 (CSV): {raw_data_path}")
+
     metrics = compute_training_metrics(return_list, None, success_threshold=200.0, cumulative_target=50000.0)
     save_metrics(log_dir, metrics)
 
