@@ -18,7 +18,7 @@ class KFDQNAgent:
     - 双模糊系统 (章节 4.2.2): kf_theta (指导/Guide) 和 kf_theta_minus (学习/Learn) 分离，避免训练不稳定。
     - 两阶段 Q 学习 (算法 2):
         * episode < ep_r (ept): 监督学习损失 (公式 19)，用于模仿模糊系统的指导。
-        * episode >= ep_r: 混合 TD 目标 (公式 18)。
+        * episode >= ep_r: 混合 TD 目标` (公式 18)。
     """
 
     def __init__(self, cfg):
@@ -75,7 +75,6 @@ class KFDQNAgent:
             self.fuzzy_guide.load_state_dict(self.fuzzy_learn.state_dict())# 将"学习好的模糊参数"复制给"指导模糊系统"
 
     def update_parameters(self, episode_idx: int):
-        """每回合调用一次：更新 epsilon，更新 m/n 权重，以及执行周期性硬更新。"""
         self._episode_idx = episode_idx
         self.epsilon = get_linear_decay_epsilon(episode_idx, self.cfg)
         # 公式 (34): m = 0.35 + 0.6 * exp(-i),可以在 config 设置 m_tau，计算 exp(-i/m_tau)
@@ -93,7 +92,7 @@ class KFDQNAgent:
         C = getattr(self.cfg, "C_update", 10)
         if episode_idx > 0 and (episode_idx % C == 0):
             self._hard_update_targets()
-
+            
     def standardize(self,tensor, eps=1e-6):
         mu = tensor.mean(dim=1, keepdim=True)
         std = tensor.std(dim=1, keepdim=True)

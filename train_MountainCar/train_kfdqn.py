@@ -52,10 +52,15 @@ def train_kfdqn():
     # 1. 初始化配置 (自动加载 KFDQN 参数)
     cfg = Config(algo="KFDQN", env_name=ENV_NAME)
     cfg.ep_r = 50  # 强制引导阶段长度]
+    cfg.seed = 122
+
+    # 3. 环境与种子设置
+    base_seed = cfg.seed 
+    env = make_env(cfg.env_name)
 
     # 2. 准备 TensorBoard 和 日志路径
     log_line(f"\n{'='*60}")
-    log_line(f"开始训练 KFDQN | 环境: {cfg.env_name} | 设备: {cfg.device}")
+    log_line(f"开始训练 KFDQN | 环境: {cfg.env_name} | 随机种子: {cfg.seed} | 设备: {cfg.device}")
     log_line(f"{'='*60}")
     log_line("查看训练过程数据，请终端运行: tensorboard --logdir=results_MountainCar")
     log_line(f"{'='*60}\n")
@@ -67,9 +72,7 @@ def train_kfdqn():
     save_run_config(log_dir, cfg)
     writer = SummaryWriter(log_dir=log_dir)
 
-    # 3. 环境与种子设置
-    base_seed = cfg.seed 
-    env = make_env(cfg.env_name)
+    
 
     seed_everything(base_seed, env=env)
 
@@ -90,7 +93,6 @@ def train_kfdqn():
             agent.update_parameters(ep)
             # 重置环境
             state, _ = env.reset(seed=episode_seed(base_seed, ep))
-
             done = False
             ep_return = 0.0
             ep_q_loss = 0.0

@@ -1,15 +1,15 @@
 {
-  "total_return": -65371,
+  "total_return": -65484,
   "episodes": 500,
   "success_threshold": -110.0,
-  "success_rate": 0.208,
+  "success_rate": 0.296,
   "episodes_to_cumulative_target": null,
   "success_count_over_cutoff": 499,
-  "avg_return_success_only": -130.60320641282564,
+  "avg_return_success_only": -130.82965931863728,
   "success_target_count": 250,
-  "efficiency_episodes_for_success_target": 251,
-  "normalized_reward_variance": 0.000160360105014233,
-  "avg_reward_50_mad_to_success_threshold": 20.98647450110863,
+  "efficiency_episodes_for_success_target": 250,
+  "normalized_reward_variance": 0.0007180152716063346,
+  "avg_reward_50_mad_to_success_threshold": 20.73729490022172,
   "reward_bins": [
     {
       "range": "Fail (-200)",
@@ -18,13 +18,13 @@
     },
     {
       "range": "Success (Normal)",
-      "count": 437,
-      "ratio": 0.874
+      "count": 362,
+      "ratio": 0.724
     },
     {
       "range": "Success (High Performance)",
-      "count": 62,
-      "ratio": 0.124
+      "count": 137,
+      "ratio": 0.274
     }
   ]
 }

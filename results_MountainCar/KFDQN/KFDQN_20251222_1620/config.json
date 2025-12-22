@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-12-21T19:26:18",
+  "timestamp": "2025-12-22T16:20:36",
   "run": {
     "script": "train_kfdqn.py",
     "argv": []
@@ -14,7 +14,7 @@
     "state_dim": 2,
     "action_dim": 3,
     "hidden_dim": 128,
-    "seed": 432,
+    "seed": 122,
     "device": "cuda",
     "gamma": 0.98,
     "episodes": 500,
@@ -35,7 +35,7 @@
     "target_update": 10,
     "train_freq": 1,
     "ep_r": 50,
-    "C_update": 10,
+    "C_update": 50,
     "m_decay": 0.2,
     "m_tau": 100,
     "freeze_fuzzy_premise": true,
