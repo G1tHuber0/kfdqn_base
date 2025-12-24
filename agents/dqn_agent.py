@@ -49,9 +49,10 @@ class DQNAgent:
         self.optimizer.step()
         
         # 更新目标网络
+        self.update_steps += 1
         if self.update_steps % self.cfg.target_update == 0:
             self.target_q_net.load_state_dict(self.q_net.state_dict())
-        self.update_steps += 1
+        
             
         return loss.item()
 

@@ -10,7 +10,11 @@ class Config:
         self.algo = algo
         self.env_name = env_name
         # --- 自动适配环境参数 ---
-        if "CartPole" in self.env_name:
+        if "GoalReachROS" in self.env_name or "ObstacleAvoidROS" in self.env_name:
+            self.state_dim = 93
+            self.action_dim = 3
+            self.hidden_dim = [128, 256, 128, 64]
+        elif "CartPole" in self.env_name:
             self.state_dim = 4
             self.action_dim = 2
             self.hidden_dim = 128
@@ -37,11 +41,12 @@ class Config:
         self.gamma = 0.98       
         self.episodes = 500     
         self.lr = 0.002   
+        self.delta = None
         # 探索参数
-        self.epsilon_start = 0.01
+        self.epsilon_start = 1
         self.epsilon_end = 0.01
         self.decay_start =0
-        self.decay_steps = 0      
+        self.decay_steps = 100      
         # 梯度剪裁（<=0 或 None 不启用）
         self.grad_clip_norm = None
         # --- 4. 初始化特定算法参数 ---
@@ -51,6 +56,7 @@ class Config:
         self.m_base = None
         # 加载具体参数
         self._set_algo_specific_params()
+        self._apply_ros_env_overrides()
 
     def _set_algo_specific_params(self):
         """根据不同算法调整参数"""
@@ -119,3 +125,24 @@ class Config:
                 self.ep_r = 50
                 self.m_base = 0.8
                 self.m_decay = 0.2
+
+    def _apply_ros_env_overrides(self):
+        if "GoalReachROS" in self.env_name or "ObstacleAvoidROS" in self.env_name:
+            # ROS 环境说明：两个实验出生点固定 (0,0)。
+            # GoalReachROS 使用空白地图 empty.world；ObstacleAvoidROS 为两长方体 L 形障碍。
+            self.state_dim = 93
+            self.action_dim = 3
+            self.hidden_dim = [128, 256, 128, 64]
+            self.gamma = 0.99
+            self.lr = 1e-4
+            self.delta = 0.01
+            self.buffer_size = 10000
+            self.minimal_size = 1500
+            self.batch_size = 256
+            self.target_update = 1000
+            self.train_freq = 1
+            self.gradient_steps = 1 
+            if "GoalReachROS" in self.env_name:
+                self.episodes = 500
+            elif "ObstacleAvoidROS" in self.env_name:
+                self.episodes = 1000

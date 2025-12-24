@@ -1,5 +1,6 @@
 # models/fuzzy_system.py
 
+import math
 import torch
 import torch.nn as nn
 import itertools
@@ -77,6 +78,25 @@ class MountainCarFuzzyConfig:
     VEL_LIMIT = 0.07
 
 
+class ROSMobileFuzzyConfig:
+    # theta_norm in [-1,1], lidar_norm in [0,1]
+    ANTECEDENT_CENTERS = [
+        [-0.6, 0.0, 0.6],   # theta_norm: left, front, right
+        [0.06, 0.85],       # lidar_norm: close (~collision), far
+    ]
+    ANTECEDENT_SIGMAS = [
+        [0.35, 0.35, 0.35],
+        [0.05, 0.25],
+    ]
+
+    ACTION_SUPPORT = 1.0
+    ACTION_OPPOSE  = -1.0
+
+    THETA_LIMIT = 1.0
+    LIDAR_LIMIT = 1.0
+
+
+
 class FuzzySystem(nn.Module):
     """
     KFDQN 模糊逻辑控制器
@@ -87,11 +107,23 @@ class FuzzySystem(nn.Module):
         self.device = device
         self.env_name = env_name
         self.is_mountaincar = "MountainCar" in env_name
+        self.is_goalreach_ros = "GoalReachROS" in env_name
+        self.is_obstacle_avoid_ros = "ObstacleAvoidROS" in env_name
 
         if self.is_mountaincar:
             self.cfg_cls = MountainCarFuzzyConfig
             self.num_inputs = 2
             self.num_rules = 6  # MountainCar: 2 Pos * 3 Vel = 6 Rules
+            self.action_dim = 3
+        elif self.is_goalreach_ros:     # Goal Reach ROS 环境
+            self.cfg_cls = ROSMobileFuzzyConfig
+            self.num_inputs = 1
+            self.num_rules = 3
+            self.action_dim = 3
+        elif self.is_obstacle_avoid_ros: # Obstacle Avoid ROS 环境
+            self.cfg_cls = ROSMobileFuzzyConfig
+            self.num_inputs = 2
+            self.num_rules = 6
             self.action_dim = 3
         else:
             self.cfg_cls = CartPoleFuzzyConfig
@@ -106,6 +138,10 @@ class FuzzySystem(nn.Module):
         # 将 Gym 微小的数值放大，使其能落在模糊集的有效区间内
         if self.is_mountaincar:
             # Velocity range ~0.07, need scale up to match sigma ~0.02 distribution
+            self.scales = torch.tensor([1.0, 1.0], device=device)
+        elif self.is_goalreach_ros:
+            self.scales = torch.tensor([1.0], device=device)
+        elif self.is_obstacle_avoid_ros:
             self.scales = torch.tensor([1.0, 1.0], device=device)
         else:
             self.scales = torch.tensor([1.0, 1.0, 2.4, 1/3], device=device)
@@ -128,6 +164,21 @@ class FuzzySystem(nn.Module):
             # 占位符，防止调用出错 (CartPole logic won't use these)
             self.centers = None 
             self.sigmas = None
+            self.theta_centers = None
+            self.theta_sigmas = None
+            self.lidar_centers = None
+            self.lidar_sigmas = None
+        elif self.is_goalreach_ros or self.is_obstacle_avoid_ros:
+            self.theta_centers = nn.Parameter(torch.tensor(self.cfg_cls.ANTECEDENT_CENTERS[0], device=self.device))
+            self.theta_sigmas = nn.Parameter(torch.tensor(self.cfg_cls.ANTECEDENT_SIGMAS[0], device=self.device))
+            self.lidar_centers = nn.Parameter(torch.tensor(self.cfg_cls.ANTECEDENT_CENTERS[1], device=self.device))
+            self.lidar_sigmas = nn.Parameter(torch.tensor(self.cfg_cls.ANTECEDENT_SIGMAS[1], device=self.device))
+            self.centers = None 
+            self.sigmas = None
+            self.pos_centers = None
+            self.pos_sigmas = None
+            self.vel_centers = None
+            self.vel_sigmas = None
         else:
             self.centers = nn.Parameter(
                 torch.tensor(self.cfg_cls.ANTECEDENT_CENTERS, dtype=torch.float32).to(self.device)
@@ -148,6 +199,11 @@ class FuzzySystem(nn.Module):
         if self.is_mountaincar:
             processed[:, 0] = torch.clamp(processed[:, 0], -self.cfg_cls.POS_LIMIT, self.cfg_cls.POS_LIMIT)
             processed[:, 1] = torch.clamp(processed[:, 1], -self.cfg_cls.VEL_LIMIT, self.cfg_cls.VEL_LIMIT)
+        elif self.is_goalreach_ros:
+            processed[:, 0] = torch.clamp(processed[:, 0], -self.cfg_cls.THETA_LIMIT, self.cfg_cls.THETA_LIMIT)
+        elif self.is_obstacle_avoid_ros:
+            processed[:, 0] = torch.clamp(processed[:, 0], -self.cfg_cls.THETA_LIMIT, self.cfg_cls.THETA_LIMIT)
+            processed[:, 1] = torch.clamp(processed[:, 1], 0.0, self.cfg_cls.LIDAR_LIMIT)
         else:
             processed[:, 0] = torch.clamp(processed[:, 0], -self.cfg_cls.POS_LIMIT, self.cfg_cls.POS_LIMIT)
             processed[:, 2] = torch.clamp(processed[:, 2], -self.cfg_cls.ANGLE_LIMIT, self.cfg_cls.ANGLE_LIMIT)
@@ -190,6 +246,43 @@ class FuzzySystem(nn.Module):
                 set_rule(1, 2, 2)
             return
 
+        if self.is_goalreach_ros:
+            SUPPORT = self.cfg_cls.ACTION_SUPPORT
+            OPPOSE = self.cfg_cls.ACTION_OPPOSE
+            nn.init.constant_(self.rule_weights, OPPOSE)
+            with torch.no_grad():
+                # Rule 0: target left -> action 0
+                self.rule_weights[0, 0] = SUPPORT
+                # Rule 1: target front -> action 2
+                self.rule_weights[1, 2] = SUPPORT
+                # Rule 2: target right -> action 1
+                self.rule_weights[2, 1] = SUPPORT
+            return
+
+        if self.is_obstacle_avoid_ros:
+            SUPPORT = self.cfg_cls.ACTION_SUPPORT
+            OPPOSE = self.cfg_cls.ACTION_OPPOSE
+            nn.init.constant_(self.rule_weights, OPPOSE)
+            with torch.no_grad():
+                # rule index: theta_i (0=left,1=front,2=right), lidar_i (0=close,1=far)
+                def set_rule(theta_i, lidar_i, action, support=True):
+                    rule_idx = theta_i * 2 + lidar_i
+                    self.rule_weights[rule_idx, action] = SUPPORT if support else OPPOSE
+
+                # close rules (lidar_i = 0)
+                set_rule(0, 0, 0, True)  # close & left -> a0
+                set_rule(2, 0, 1, True)  # close & right -> a1
+                # close & front -> a0 and a1 support, a2 oppose
+                set_rule(1, 0, 0, True)
+                set_rule(1, 0, 1, True)
+                set_rule(1, 0, 2, False)
+
+                # far rules (lidar_i = 1)
+                set_rule(0, 1, 0, True)  # far & left -> a0
+                set_rule(2, 1, 1, True)  # far & right -> a1
+                set_rule(1, 1, 2, True)  # far & front -> a2
+            return
+
         # ==========================================
         # Branch 2: CartPole (16 Rules, Table 3 Extended)
         # ==========================================
@@ -221,13 +314,36 @@ class FuzzySystem(nn.Module):
         if state.dim() == 1:
             state = state.unsqueeze(0)
         batch_size = state.shape[0] 
-        x_in = self.preprocess(state)
+        if self.is_goalreach_ros or self.is_obstacle_avoid_ros:
+            theta_d = state[..., 90]
+            if self.is_obstacle_avoid_ros:
+                min_lidar = state[..., 0:90].min(dim=-1).values
+                feats = torch.stack([theta_d, min_lidar], dim=-1)
+            else:
+                feats = theta_d.unsqueeze(-1)
+            x_in = self.preprocess(feats)
+        else:
+            x_in = self.preprocess(state)
         x = x_in.unsqueeze(2)
 
         # ==========================================
-        # Branch 1: MountainCar Inference (2 Pos sets x 3 Vel sets)
+        # Branch 1: ROS Goal/Obstacle Inference
         # ==========================================
-        if self.is_mountaincar:
+        if self.is_goalreach_ros or self.is_obstacle_avoid_ros:
+            theta = x[:, 0, :] # [B, 1]
+            mu_theta = self.gaussian(theta, self.theta_centers, self.theta_sigmas) # [B, 3]
+            if self.is_obstacle_avoid_ros:
+                lidar = x[:, 1, :] # [B, 1]
+                mu_lidar = self.gaussian(lidar, self.lidar_centers, self.lidar_sigmas) # [B, 2]
+                firing = torch.bmm(mu_theta.unsqueeze(2), mu_lidar.unsqueeze(1))
+                firing = firing.view(batch_size, -1) # [B, 6]
+            else:
+                firing = mu_theta # [B, 3]
+
+        # ==========================================
+        # Branch 2: MountainCar Inference (2 Pos sets x 3 Vel sets)
+        # ==========================================
+        elif self.is_mountaincar:
             # 分别提取位置和速度
             pos = x[:, 0, :] # [B, 1]
             vel = x[:, 1, :] # [B, 1]
@@ -241,7 +357,7 @@ class FuzzySystem(nn.Module):
             firing = firing.view(batch_size, -1) # Flatten to [B, 6]
             
         # ==========================================
-        # Branch 2: CartPole Inference (Standard 2x2x2x2)
+        # Branch 3: CartPole Inference (Standard 2x2x2x2)
         # ==========================================
         else:
             # 统一计算高斯隶属度 [B, 4, 2]
@@ -266,3 +382,6 @@ class FuzzySystem(nn.Module):
         output = torch.matmul(norm, self.rule_weights)
         
         return output
+    
+
+    
