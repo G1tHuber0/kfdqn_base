@@ -81,11 +81,11 @@ class MountainCarFuzzyConfig:
 class ROSMobileFuzzyConfig:
     # theta_norm in [-1,1], lidar_norm in [0,1]
     ANTECEDENT_CENTERS = [
-        [-0.6, 0.0, 0.6],   # theta_norm: left, front, right
+        [-0.7, 0.0, 0.7],   # theta_norm: left, front, right
         [0.06, 0.85],       # lidar_norm: close (~collision), far
     ]
     ANTECEDENT_SIGMAS = [
-        [0.35, 0.35, 0.35],
+        [0.4, 0.2, 0.4],
         [0.05, 0.25],
     ]
 
@@ -140,7 +140,7 @@ class FuzzySystem(nn.Module):
             # Velocity range ~0.07, need scale up to match sigma ~0.02 distribution
             self.scales = torch.tensor([1.0, 1.0], device=device)
         elif self.is_goalreach_ros:
-            self.scales = torch.tensor([1.0], device=device)
+            self.scales = torch.tensor([1], device=device)
         elif self.is_obstacle_avoid_ros:
             self.scales = torch.tensor([1.0, 1.0], device=device)
         else:
@@ -252,11 +252,11 @@ class FuzzySystem(nn.Module):
             nn.init.constant_(self.rule_weights, OPPOSE)
             with torch.no_grad():
                 # Rule 0: target left -> action 0
-                self.rule_weights[0, 0] = SUPPORT
+                self.rule_weights[0, 1] = SUPPORT
                 # Rule 1: target front -> action 2
                 self.rule_weights[1, 2] = SUPPORT
                 # Rule 2: target right -> action 1
-                self.rule_weights[2, 1] = SUPPORT
+                self.rule_weights[2, 0] = SUPPORT
             return
 
         if self.is_obstacle_avoid_ros:
@@ -270,17 +270,18 @@ class FuzzySystem(nn.Module):
                     self.rule_weights[rule_idx, action] = SUPPORT if support else OPPOSE
 
                 # close rules (lidar_i = 0)
-                set_rule(0, 0, 0, True)  # close & left -> a0
-                set_rule(2, 0, 1, True)  # close & right -> a1
-                # close & front -> a0 and a1 support, a2 oppose
+                set_rule(2, 0, 0, True)  # close & LEFT  -> left turn (a0)
+                set_rule(0, 0, 1, True)  # close & RIGHT -> right turn (a1)
+
+                # close & front -> both turns supported, forward opposed（保持）
                 set_rule(1, 0, 0, True)
                 set_rule(1, 0, 1, True)
                 set_rule(1, 0, 2, False)
 
                 # far rules (lidar_i = 1)
-                set_rule(0, 1, 0, True)  # far & left -> a0
-                set_rule(2, 1, 1, True)  # far & right -> a1
-                set_rule(1, 1, 2, True)  # far & front -> a2
+                set_rule(2, 1, 0, True)  # far & LEFT  -> a0
+                set_rule(0, 1, 1, True)  # far & RIGHT -> a1
+                set_rule(1, 1, 2, True)  # far & FRONT -> a2
             return
 
         # ==========================================

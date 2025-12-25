@@ -83,8 +83,8 @@ class Config:
             self.batch_size = 1
             self.target_update = None
             self.epsilon_start = None
-            self.lr_actor = 0.0005
-            self.lr_critic = 0.002
+            self.lr_actor = 0.00001
+            self.lr_critic = 0.0001
         # Group D: KFDQN (Knowledge Guided)
         elif self.algo == 'KFDQN':
 
@@ -118,7 +118,7 @@ class Config:
             # Fuzzy 学习率与动作强度
             # =========================
             self.freeze_fuzzy_premise = True
-            self.fuzzy_lr = 0.002
+            self.fuzzy_lr = 0.02
             if "MountainCar" in self.env_name:
                 self.h1 = 0.4
                 self.h2 = 0.6
@@ -139,7 +139,7 @@ class Config:
             self.buffer_size = 10000
             self.minimal_size = 1500
             self.batch_size = 256
-            self.target_update = 1000
+            self.target_update = 500
             self.train_freq = 1
             self.gradient_steps = 1 
             if "GoalReachROS" in self.env_name:

@@ -66,7 +66,7 @@ class ROSGazeboMobileRobotEnv(gym.Env):
         turn_omega: float = 1.5,
         publish_hz: float = 30.0,# 控制频率
         #动作持续时间 = 1/publish_hz * n 个周期
-        action_duration_n: float = 3 ,# 动作持续的控制周期数
+        action_duration: float = 0.1 ,# 动作持续的控制周期数
         RTH: float = 0.20,
         CTH: float = 0.15,
         r_reach: float = 200.0,
@@ -80,12 +80,13 @@ class ROSGazeboMobileRobotEnv(gym.Env):
         waypoints: list[tuple[float, float]] | None = None,
         waypoint_rth: float = 0.20,
         random_goal: bool = False,
-        max_goal_distance: float = 10.0,
+        max_goal_distance: float = 8.0,
         wait_timeout: float = 1.0,
         obstacle_mode: bool = False,
         enable_viz: bool = True,
         viz_frame: str = "odom",
         max_path_len: int = 3000,
+        render_mode: str | None = None,   # <<< 新增这一行（放最后也行）
     ):
         super().__init__()
         ensure_ros_init()
@@ -108,7 +109,7 @@ class ROSGazeboMobileRobotEnv(gym.Env):
         self.turn_v = turn_v
         self.turn_omega = turn_omega
         self.publish_hz = publish_hz
-        self.action_duration = 1 / publish_hz * action_duration_n
+        self.action_duration = action_duration
         self.RTH = RTH
         self.CTH = CTH
         self.r_reach = r_reach
@@ -321,8 +322,14 @@ class ROSGazeboMobileRobotEnv(gym.Env):
     # -------------------------------------------------------------------------
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
+        if self.enable_viz:
+            self.path_msg = Path()
+            self.path_msg.header.frame_id = self.viz_frame
+            self._trajectory_pub.publish(self.path_msg)  # 立刻清空显示
         if seed is not None:
             self._np_random = np.random.default_rng(seed)
+        odom_seq0 = self._current_odom.header.seq if self._current_odom else -1
+        scan_seq0 = self._current_scan.header.seq if self._current_scan else -1
 
         # 在重置物理前，先清空脏数据，防止读到上一回合的残留
         self._current_scan = None
@@ -336,11 +343,17 @@ class ROSGazeboMobileRobotEnv(gym.Env):
         # Reset 时，必须确保有第一帧数据
         # 只有这里需要阻塞等待，因为刚 reset 完不知道订阅回调是否触发了
         start_wait = time.time()
-        while (self._current_scan is None or self._current_odom is None):
-            if time.time() - start_wait > 5.0: # 稍微放宽超时时间
-                rospy.logerr("Reset timeout: Subscribers did not receive data.")
-                raise RuntimeError("Reset timeout: No Scan or Odom received.")
-            rospy.sleep(0.05) # 减少 sleep 时间，响应更快
+        while True:
+            scan = self._current_scan
+            odom = self._current_odom
+            if scan and odom:
+                if scan.header.seq > scan_seq0 and odom.header.seq > odom_seq0:
+                    x, y, yaw = self._get_pose(odom)
+                    if (x - self.init_x) ** 2 + (y - self.init_y) ** 2 < (0.10 ** 2):  # 10cm 容差
+                        break
+            if time.time() - start_wait > 5.0:
+                raise RuntimeError("Reset timeout: No fresh Scan/Odom near init pose.")
+            time.sleep(0.005)
 
         self.step_count = 0
         self.prev_action = 0.0
@@ -409,23 +422,24 @@ class ROSGazeboMobileRobotEnv(gym.Env):
             except rospy.ROSTimeMovedBackwardsException:
                 break
         
-        # 【关键修改】这里删除了 self._publish_cmd(0.0, 0.0)
-        # 动作结束了，但我们不踩刹车。
+        # 动作结束了不刹车。
         # 机器人会带着当前的速度惯性，直接进入下一次 step 的决策。
         # 如果下一次决策够快，速度会无缝衔接。
-
         # 3. 确保读到的是“动作执行期间/之后”产生的最新数据
         # 即使不停车，我们也需要保证数据不是动作开始前的老黄历
-        t0 = time.time()
+        # 3. 确保读到的是新数据（使用 sim time）
+        t0 = rospy.get_time()
+        timeout = 0.7  # 这里的 0.1 变成“仿真秒”，更合理
+        rate_wait = rospy.Rate(120)  # 等待时的轮询频率（仿真Hz）
+
         while True:
             scan = self._current_scan
             odom = self._current_odom
-            # 只要 seq 变了，说明这是新的一帧数据
             if scan and odom and scan.header.seq > scan_seq0:
                 break
-            if time.time() - t0 > 0.1: # 超时保护
+            if rospy.get_time() - t0 > timeout:
                 break
-            time.sleep(0.001) # 极速轮询
+            rate_wait.sleep()
             
         # 简单防护：万一中途 reset 导致数据丢失
         if scan is None or odom is None:
