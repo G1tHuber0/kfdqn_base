@@ -46,7 +46,7 @@ class Config:
         self.epsilon_start = 1
         self.epsilon_end = 0.01
         self.decay_start =0
-        self.decay_steps = 100      
+        self.decay_steps = 50      
         # 梯度剪裁（<=0 或 None 不启用）
         self.grad_clip_norm = None
         # --- 4. 初始化特定算法参数 ---
@@ -139,9 +139,14 @@ class Config:
             self.buffer_size = 10000
             self.minimal_size = 1500
             self.batch_size = 256
-            self.target_update = 500
+            self.target_update = 750
             self.train_freq = 1
             self.gradient_steps = 1 
+            # 探索参数
+            self.epsilon_start = 1
+            self.epsilon_end = 0.01
+            self.decay_start =0
+            self.decay_steps = 250
             if "GoalReachROS" in self.env_name:
                 self.episodes = 500
             elif "ObstacleAvoidROS" in self.env_name:

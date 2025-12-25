@@ -1,0 +1,43 @@
+{
+  "timestamp": "2025-12-25T15:10:53",
+  "run": {
+    "script": "train_double_dqn.py",
+    "argv": []
+  },
+  "system": {
+    "python": "3.10.19",
+    "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.31"
+  },
+  "config": {
+    "algo": "Double",
+    "env_name": "GoalReachROS-v0",
+    "state_dim": 93,
+    "action_dim": 3,
+    "hidden_dim": [
+      128,
+      256,
+      128,
+      64
+    ],
+    "seed": 50,
+    "device": "cuda",
+    "gamma": 0.99,
+    "episodes": 500,
+    "lr": 0.0001,
+    "delta": 0.01,
+    "epsilon_start": 1,
+    "epsilon_end": 0.01,
+    "decay_start": 0,
+    "decay_steps": 250,
+    "grad_clip_norm": null,
+    "h1": null,
+    "h2": null,
+    "m_base": null,
+    "buffer_size": 10000,
+    "minimal_size": 1500,
+    "batch_size": 256,
+    "target_update": 750,
+    "train_freq": 1,
+    "gradient_steps": 1
+  }
+}

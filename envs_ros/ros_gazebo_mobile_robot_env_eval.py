@@ -49,6 +49,11 @@ class ROSGazeboMobileRobotEnv(gym.Env):
     def __init__(
         self,
         *,
+
+        arena_half_size = 2.5,
+        arena_margin = 0.25,
+        min_goal_dist = 0.8,
+
         scan_topic: str = "/scan",
         odom_topic: str = "/odom",
         cmd_vel_topic: str = "/cmd_vel",
@@ -79,7 +84,7 @@ class ROSGazeboMobileRobotEnv(gym.Env):
         goal_y: float | None = None,
         waypoints: list[tuple[float, float]] | None = None,
         waypoint_rth: float = 0.20,
-        random_goal: bool = False,
+        random_goal: bool = True,
         max_goal_distance: float = 8.0,
         wait_timeout: float = 1.0,
         obstacle_mode: bool = False,
@@ -90,6 +95,10 @@ class ROSGazeboMobileRobotEnv(gym.Env):
     ):
         super().__init__()
         ensure_ros_init()
+
+        self.arena_half_size = arena_half_size
+        self.arena_margin = arena_margin
+        self.min_goal_dist = min_goal_dist
 
         self.scan_topic = scan_topic
         self.odom_topic = odom_topic
@@ -516,18 +525,18 @@ class ROSGazeboMobileRobotEnv(gym.Env):
         self._publish_cmd(0.0, 0.0)
 
 # 注册环境 (保持不变)
-if "GoalReachROS-v0" not in registry:
+if "GoalReachROS-Train-v0" not in registry:
     register(
-        id="GoalReachROS-v0",
+        id="GoalReachROS-Train-v0",
         entry_point="envs_ros.ros_gazebo_mobile_robot_env:ROSGazeboMobileRobotEnv",
         kwargs={
             "obstacle_mode": False,
             "robot_model_name": "turtlebot3_burger",
-            "waypoints": [(0.7, 0.5), (1.6, 0.5), (1.3, -0.4), (0.8, 0.0), (0.8, -0.5)],
-            "waypoint_rth": 0.20,
+            "random_goal": True,
+            "waypoints": None,
+            "max_goal_distance": 8.0,
         },
     )
-
 if "ObstacleAvoidROS-v0" not in registry:
     register(
         id="ObstacleAvoidROS-v0",

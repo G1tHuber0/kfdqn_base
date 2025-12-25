@@ -1,0 +1,30 @@
+{
+  "total_return": 47173,
+  "episodes": 500,
+  "success_threshold": -110.0,
+  "success_rate": 0.91,
+  "episodes_to_cumulative_target": null,
+  "success_count_over_cutoff": 499,
+  "avg_return_success_only": 94.97978582206179,
+  "success_target_count": 250,
+  "efficiency_episodes_for_success_target": 251,
+  "normalized_reward_variance": 0.028554224577717797,
+  "avg_reward_50_mad_to_success_threshold": 199.8455316631083,
+  "reward_bins": [
+    {
+      "range": "Fail (-200)",
+      "count": 0,
+      "ratio": 0.0
+    },
+    {
+      "range": "Success (Normal)",
+      "count": 51,
+      "ratio": 0.102
+    },
+    {
+      "range": "Success (High Performance)",
+      "count": 448,
+      "ratio": 0.896
+    }
+  ]
+}

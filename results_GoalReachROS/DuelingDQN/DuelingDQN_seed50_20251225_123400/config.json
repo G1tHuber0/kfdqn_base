@@ -1,7 +1,7 @@
 {
-  "timestamp": "2025-12-25T12:00:27",
+  "timestamp": "2025-12-25T15:31:50",
   "run": {
-    "script": "train_dqn.py",
+    "script": "train_dueling_dqn.py",
     "argv": []
   },
   "system": {
@@ -9,7 +9,7 @@
     "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.31"
   },
   "config": {
-    "algo": "DQN",
+    "algo": "Dueling",
     "env_name": "GoalReachROS-v0",
     "state_dim": 93,
     "action_dim": 3,
@@ -19,7 +19,7 @@
       128,
       64
     ],
-    "seed": 46,
+    "seed": 50,
     "device": "cuda",
     "gamma": 0.99,
     "episodes": 500,
@@ -28,7 +28,7 @@
     "epsilon_start": 1,
     "epsilon_end": 0.01,
     "decay_start": 0,
-    "decay_steps": 100,
+    "decay_steps": 250,
     "grad_clip_norm": null,
     "h1": null,
     "h2": null,
@@ -36,7 +36,7 @@
     "buffer_size": 10000,
     "minimal_size": 1500,
     "batch_size": 256,
-    "target_update": 500,
+    "target_update": 750,
     "train_freq": 1,
     "gradient_steps": 1
   }
